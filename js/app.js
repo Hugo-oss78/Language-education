@@ -1,13 +1,18 @@
 import { LANGUAGES, getLanguage } from '../data/languages.js';
 import { GRADES, isNew, isDue, isMature, review, previewIntervals } from './srs.js';
-import { checkAnswer, alternatives, parseCsv, rowsToCards } from './text.js';
+import { gradeTyped, alternatives, parseCsv, rowsToCards } from './text.js';
+import { KINDS, KIND_LABELS, clozeOf, choicesFor, pickExercise, pickQuizExercise, shuffle, bare } from './exercises.js';
+import { icon, flag } from './icons.js';
 import {
-  store, save, logReview, newCardsToday, streak, today,
+  store, save, logReview, newCardsToday, streak, today, accuracy,
   exportJson, importJson, resetAll,
 } from './storage.js';
 
 const app = document.getElementById('app');
-const deckCache = {};
+const langCache = {};
+const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
+const LEVEL_NAMES = { A1: 'Découverte', A2: 'Survie', B1: 'Seuil', B2: 'Avancé', C1: 'Autonome' };
+const DEFAULT_HUE = '#e3b35a';
 
 // ---------- Données ----------
 
@@ -16,22 +21,37 @@ function slug(text) {
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-async function loadDecks(lang) {
-  if (!deckCache[lang]) {
-    const mod = await import(`../data/${lang}.js`);
-    deckCache[lang] = mod.default.decks;
+async function loadLanguage(code) {
+  if (!langCache[code]) {
+    const mod = await import(`../data/${code}.js`);
+    langCache[code] = mod.default;
   }
-  const custom = store.customDecks[lang] || [];
-  return [...deckCache[lang], ...custom.map((d) => ({ ...d, custom: true }))].map((deck) => ({
-    ...deck,
-    cards: deck.cards.map((c) => ({ ...c, id: `${lang}:${deck.id}:${slug(c.term)}`, deckId: deck.id })),
-  }));
+  const lang = getLanguage(code);
+  const { decks: base, reviewNeeded = false } = langCache[code];
+  const custom = (store.customDecks[code] || []).map((d) => ({ icon: 'pen', level: 'B1', ...d, custom: true }));
+  const decks = [...base, ...custom]
+    .map((deck, order) => ({
+      ...deck,
+      order,
+      hue: deck.hue || lang.hue,
+      cards: deck.cards.map((c, i) => ({
+        ...c,
+        id: `${code}:${deck.id}:${slug(c.translit || c.term) || i}`,
+        deckId: deck.id,
+      })),
+    }))
+    .sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || a.order - b.order);
+  return { decks, reviewNeeded };
 }
 
-function deckCounts(cards, now = Date.now()) {
+function stateOf(card) {
+  return store.progress[card.id];
+}
+
+function counts(cards, now = Date.now()) {
   let due = 0, fresh = 0, mature = 0;
   for (const c of cards) {
-    const s = store.progress[c.id];
+    const s = stateOf(c);
     if (isNew(s)) fresh++;
     else if (isDue(s, now)) due++;
     if (isMature(s)) mature++;
@@ -39,19 +59,25 @@ function deckCounts(cards, now = Date.now()) {
   return { due, fresh, mature, total: cards.length, seen: cards.length - fresh };
 }
 
-function newLeftToday() {
-  return Math.max(0, store.settings.newPerDay - newCardsToday());
+function newLeftToday(code) {
+  return Math.max(0, store.settings.newPerDay - newCardsToday(code));
 }
 
-// ---------- Outils d'affichage ----------
+// ---------- Affichage ----------
 
 function esc(text = '') {
   return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Fonction de nettoyage de la page courante (écouteurs clavier…), appelée au changement de page.
+let cleanup = null;
 function render(html) {
   app.innerHTML = html;
   window.scrollTo(0, 0);
+}
+
+function go(hash) {
+  location.hash = hash;
 }
 
 function toast(message) {
@@ -64,40 +90,46 @@ function toast(message) {
 }
 
 function setActiveTab(name) {
-  document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === name));
+  document.querySelectorAll('.tabbar a').forEach((a) => {
+    const on = a.dataset.tab === name;
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
 }
 
-// Icônes au trait (style « lucide »).
-const ICONS = {
-  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>',
-  x: '<path d="M18 6 6 18M6 6l12 12"/>',
-  back: '<path d="m15 18-6-6 6-6"/>',
-  play: '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
-  flame: '<path d="M12 22c4 0 7-3 7-7 0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8 0 4 3 7 7 7z"/>',
-};
-
-function icon(name) {
-  return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+// Couleur d'ambiance : le fond et les reflets suivent le thème de la leçon.
+function setTheme(hue = DEFAULT_HUE) {
+  document.documentElement.style.setProperty('--theme', hue);
 }
 
-// Bandeau décoratif : drapeaux et icônes du thème qui flottent au-dessus d'une vague.
-// La disposition est pseudo-aléatoire mais stable pour une même liste d'éléments.
+function langAttrs(lang) {
+  return `lang="${lang.code}" dir="${lang.dir}"`;
+}
+
+function pct(n, d) {
+  return d ? Math.round((n / d) * 100) : 0;
+}
+
+function plural(n, word, pluralWord = `${word}s`) {
+  return `${n} ${n > 1 ? pluralWord : word}`;
+}
+
+// Bandeau : drapeaux et icônes du thème qui flottent au-dessus d'une vague.
+// Disposition pseudo-aléatoire, mais stable pour une même page.
 function banner(items, { compact = false } = {}) {
-  let seed = [...items.join('')].reduce((h, ch) => (h * 31 + ch.codePointAt(0)) >>> 0, 7);
+  const key = items.map((it) => it.flag || it.icon).join('|');
+  let seed = [...key].reduce((h, ch) => (h * 31 + ch.codePointAt(0)) >>> 0, 7);
   const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  const slots = compact ? 7 : 9;
-  const maxY = compact ? 34 : 70;
+  const slots = compact ? 6 : 8;
   const floaties = Array.from({ length: slots }, (_, i) => {
-    const item = items[i % items.length];
-    const x = ((i + 0.5) / slots) * 100 + (rand() - 0.5) * 6;
-    const y = 8 + rand() * maxY;
-    const size = (compact ? 18 : 22) + rand() * (compact ? 10 : 14);
-    const r = Math.round((rand() - 0.5) * 24);
-    const glyph = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(item) ? '' : ' glyph';
-    return `<span class="floaty${glyph}" style="left:calc(${x.toFixed(1)}% - ${size / 2}px);top:${y.toFixed(0)}px;font-size:${size.toFixed(0)}px;--r:${r}deg;transform:rotate(${r}deg);animation-delay:-${(rand() * 6).toFixed(1)}s">${esc(item)}</span>`;
+    const it = items[i % items.length];
+    const x = ((i + 0.5) / slots) * 100 + (rand() - 0.5) * 7;
+    const y = (compact ? 6 : 12) + rand() * (compact ? 30 : 64);
+    const r = Math.round((rand() - 0.5) * 22);
+    const size = (compact ? 26 : 32) + rand() * (compact ? 8 : 14);
+    const delay = (rand() * 6).toFixed(1);
+    const inner = it.flag ? flag(it.flag) : `<span class="orb" style="--hue:${it.hue}">${icon(it.icon)}</span>`;
+    return `<span class="floaty${it.flag ? ' is-flag' : ''}" style="left:calc(${x.toFixed(1)}% - ${size / 2}px);top:${y.toFixed(0)}px;width:${size.toFixed(0)}px;--r:${r}deg;animation-delay:-${delay}s">${inner}</span>`;
   }).join('');
   return `
     <div class="banner${compact ? ' compact' : ''}" aria-hidden="true">
@@ -106,10 +138,9 @@ function banner(items, { compact = false } = {}) {
     </div>`;
 }
 
-// Mélange drapeaux et icônes de thème : 🇬🇧 🪤 🇬🇧 🧩 …
-function interleave(flags, themes) {
-  if (!themes.length) return flags;
-  return themes.flatMap((t, i) => [flags[i % flags.length], t]);
+function interleave(flags, icons) {
+  if (!icons.length) return flags.map((f) => ({ flag: f }));
+  return icons.flatMap((it, i) => [{ flag: flags[i % flags.length] }, it]);
 }
 
 function pageHead({ back, eyebrow, mark = icon('globe'), title, lede, saved }) {
@@ -117,127 +148,190 @@ function pageHead({ back, eyebrow, mark = icon('globe'), title, lede, saved }) {
     <header class="page-head">
       ${back ? `<a class="back" href="${back.href}">${icon('back')} ${esc(back.label)}</a>` : ''}
       ${eyebrow ? `<div class="eyebrow"><span class="ring">${mark}</span>${esc(eyebrow)}</div>` : ''}
-      <h1>${esc(title)}</h1>
+      <h1>${title}</h1>
       ${lede ? `<p class="lede">${lede}</p>` : ''}
       ${saved ? `<p class="saved">${icon('check')} ${saved}</p>` : ''}
     </header>`;
 }
 
-// ---------- Synthèse vocale ----------
-
-function speak(text, langCode) {
-  if (!('speechSynthesis' in window)) return toast('La synthèse vocale n’est pas disponible ici.');
-  const lang = getLanguage(langCode)?.tts || langCode;
-  const utter = new SpeechSynthesisUtterance(alternatives(text)[0]);
-  utter.lang = lang;
-  const voice = speechSynthesis.getVoices().find((v) => v.lang.replace('_', '-').startsWith(lang));
-  if (voice) utter.voice = voice;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(utter);
+function progressBar(value, label) {
+  return `<span class="progress" role="progressbar" aria-valuenow="${value}" aria-valuemin="0" aria-valuemax="100" aria-label="${esc(label)}"><span style="width:${value}%"></span></span>`;
 }
 
-// ---------- Vue : accueil ----------
+// ---------- Voix ----------
+
+let voices = [];
+function refreshVoices() {
+  try { voices = window.speechSynthesis?.getVoices() || []; } catch { voices = []; }
+}
+if ('speechSynthesis' in window) {
+  refreshVoices();
+  speechSynthesis.addEventListener?.('voiceschanged', refreshVoices);
+}
+
+function voiceFor(code) {
+  const tts = getLanguage(code)?.tts || code;
+  const base = tts.split('-')[0];
+  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
+  return voices.find((v) => norm(v) === tts.toLowerCase()) || voices.find((v) => norm(v).startsWith(base));
+}
+
+function canSpeak(code) {
+  return !!voiceFor(code);
+}
+
+const warnedNoVoice = new Set();
+function speak(text, code) {
+  if (!('speechSynthesis' in window)) return toast('La synthèse vocale n’est pas disponible ici.');
+  const voice = voiceFor(code);
+  if (!voice && !warnedNoVoice.has(code)) {
+    warnedNoVoice.add(code);
+    toast(`Pas de voix ${getLanguage(code)?.name.toLowerCase()} sur cet appareil : la prononciation peut être fausse.`);
+  }
+  // Un souci audio ne doit jamais bloquer un exercice.
+  try {
+    const utter = new SpeechSynthesisUtterance(alternatives(text)[0].replace(/…/g, ''));
+    utter.lang = getLanguage(code)?.tts || code;
+    if (voice) utter.voice = voice;
+    utter.rate = 0.92;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utter);
+  } catch (err) {
+    console.warn('Synthèse vocale indisponible', err);
+  }
+}
+
+function speakBtn(text, cls = '') {
+  return `<button type="button" class="icon-btn speak ${cls}" data-say="${esc(text)}" aria-label="Écouter">${icon('speaker')}</button>`;
+}
+
+function bindSpeak(root, code) {
+  root.querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    speak(b.dataset.say, code);
+  }));
+}
+
+// ---------- Accueil ----------
 
 async function viewHome() {
   setActiveTab('home');
+  setTheme(DEFAULT_HUE);
   const rows = await Promise.all(LANGUAGES.map(async (l) => {
-    if (!l.available) return { l };
-    const cards = (await loadDecks(l.code)).flatMap((d) => d.cards);
-    return { l, counts: deckCounts(cards) };
+    const { decks } = await loadLanguage(l.code);
+    return { l, c: counts(decks.flatMap((d) => d.cards)) };
   }));
   const s = streak();
+  const last = rows.find((r) => r.l.code === store.settings.lastLang);
 
   render(`
-    ${banner(interleave(LANGUAGES.map((l) => l.flag), ['💬', '📚', '✈️']))}
+    ${banner(interleave(LANGUAGES.map((l) => l.code), [
+      { icon: 'chat', hue: '#f09a6a' }, { icon: 'book', hue: '#7fb6d9' }, { icon: 'plane', hue: '#82d0c0' }, { icon: 'star', hue: '#f4c76b' },
+    ]))}
     ${pageHead({
       eyebrow: 'Carnet de langues',
       title: 'Lingua',
       lede: 'Un mot à la fois, un peu plus loin chaque jour.',
-      saved: s ? `${s} jour${s > 1 ? 's' : ''} d’affilée · sauvegardé sur cet appareil` : 'Sauvegardé sur cet appareil',
+      saved: s ? `<b class="gold">${plural(s, 'jour')} d’affilée</b> · sauvegardé sur cet appareil` : 'Sauvegardé sur cet appareil',
     })}
+    ${last ? `
+      <a class="hero glass" href="#/session/${last.l.code}/all" style="--rim:var(--gold)">
+        <span class="lang-flag">${flag(last.l.code)}</span>
+        <span class="hero-body">
+          <span class="kicker">Reprendre</span>
+          <strong>${last.l.name}</strong>
+          <span class="muted small">${last.c.due ? `<b class="gold">${last.c.due} à revoir</b> · ` : ''}${plural(Math.min(newLeftToday(last.l.code), last.c.fresh), 'nouveau mot', 'nouveaux mots')}</span>
+        </span>
+        <span class="hero-go">${icon('arrow')}</span>
+      </a>` : ''}
     <h2 class="section-title">Quelle langue aujourd’hui ?</h2>
     <section class="lang-list">
-      ${rows.map(({ l, counts }) => l.available ? `
-        <a class="lang-card" href="#/lang/${l.code}">
-          <span class="flag" aria-hidden="true">${l.flag}</span>
+      ${rows.map(({ l, c }) => `
+        <a class="lang-card glass" href="#/lang/${l.code}" style="--rim:${l.hue}">
+          <span class="lang-flag">${flag(l.code)}</span>
           <span class="lang-info">
             <strong>${l.name}</strong>
-            <span class="muted" lang="${l.code}" dir="${l.dir}">${l.native}</span>
+            <span class="muted" ${langAttrs(l)}>${l.native}</span>
+            ${progressBar(pct(c.seen, c.total), `${l.name} : mots vus`)}
           </span>
           <span class="badges">
-            ${counts.due ? `<span class="badge due">${counts.due} à revoir</span>` : ''}
-            <span class="badge">${counts.seen}/${counts.total} vus</span>
+            ${c.due ? `<span class="badge due">${c.due} à revoir</span>` : ''}
+            <span class="badge">${c.seen}/${c.total}</span>
           </span>
-        </a>` : `
-        <div class="lang-card disabled" aria-disabled="true">
-          <span class="flag" aria-hidden="true">${l.flag}</span>
-          <span class="lang-info">
-            <strong>${l.name}</strong>
-            <span class="muted" lang="${l.code}" dir="${l.dir}">${l.native}</span>
-          </span>
-          <span class="badges"><span class="badge soon">Bientôt</span></span>
-        </div>`).join('')}
+        </a>`).join('')}
     </section>
+    <a class="method-link glass" href="#/method" style="--rim:#c79bf2">
+      <span class="orb" style="--hue:#c79bf2">${icon('lightbulb')}</span>
+      <span class="hero-body"><strong>La méthode</strong><span class="muted small">Pourquoi Lingua te fait travailler comme ça</span></span>
+      ${icon('arrow')}
+    </a>
   `);
 }
 
-// ---------- Vue : paquets d'une langue ----------
+// ---------- Page d'une langue ----------
 
 async function viewLanguage(code) {
   setActiveTab('home');
   const lang = getLanguage(code);
-  if (!lang?.available) return (location.hash = '#/');
-  const decks = await loadDecks(code);
-  const all = deckCounts(decks.flatMap((d) => d.cards));
-  const newToday = Math.min(newLeftToday(), all.fresh);
+  if (!lang) return go('#/');
+  setTheme(lang.hue);
+  const { decks } = await loadLanguage(code);
+  const all = counts(decks.flatMap((d) => d.cards));
+  const newToday = Math.min(newLeftToday(code), all.fresh);
+  const byLevel = LEVELS.map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv) })).filter((g) => g.decks.length);
 
   render(`
-    ${banner(interleave([lang.flag], decks.map((d) => d.icon || '📝')))}
+    ${banner(interleave([code], decks.slice(0, 6).map((d) => ({ icon: d.icon, hue: d.hue }))))}
     ${pageHead({
       back: { href: '#/', label: 'Langues' },
       eyebrow: lang.native,
-      mark: esc(lang.flag),
+      mark: flag(code),
       title: lang.name,
-      lede: `${all.seen} cartes vues sur ${all.total} · ${all.mature} maîtrisées`,
+      lede: `<b class="glow">${all.seen}</b> mots vus sur ${all.total} · <b class="glow">${all.mature}</b> maîtrisés`,
     })}
-    <a class="cta ${all.due + newToday ? '' : 'idle'}" href="#/review/${code}/all">
+    ${lang.note ? `<p class="notice">${icon('lightbulb')} <span>${esc(lang.note)}</span></p>` : ''}
+    <a class="cta ${all.due + newToday ? '' : 'idle'}" href="#/session/${code}/all">
       <span>
-        <strong>${all.due + newToday ? 'Commencer la séance' : 'Réviser quand même'}</strong>
-        <span>${all.due} à revoir · ${newToday} nouvelle${newToday > 1 ? 's' : ''}</span>
+        <strong>${all.due + newToday ? 'Séance du jour' : 'Réviser quand même'}</strong>
+        <span>${all.due} à revoir · ${plural(newToday, 'nouveau mot', 'nouveaux mots')}</span>
       </span>
-      ${icon('play')}
+      ${icon('arrow')}
     </a>
-    <h2 class="section-title">C’est plutôt…</h2>
-    <section class="deck-grid">
-      ${decks.map((d) => {
-        const c = deckCounts(d.cards);
-        const pct = Math.round((c.seen / c.total) * 100);
-        return `
-        <article class="deck">
-          <a class="deck-hit" href="#/review/${code}/${d.id}">
-            <span class="deck-icon" aria-hidden="true">${esc(d.icon || '📝')}</span>
-            <strong>${esc(d.title)}</strong>
-            <span class="desc">${esc(d.description || '')}</span>
-          </a>
-          <span class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cartes vues">
-            <span style="width:${pct}%"></span>
-          </span>
-          <span class="meta">${c.seen}/${c.total} vues${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
-          <span class="deck-links">
-            <a href="#/browse/${code}/${d.id}">Voir la liste</a>
-            ${d.custom ? `<button class="link" data-delete="${d.id}">Supprimer</button>` : ''}
-          </span>
-        </article>`;
-      }).join('')}
-    </section>
-    <details class="import">
+    <div class="quick-row">
+      <a class="chip-btn glass" href="#/quiz/${code}/all">${icon('target')} Quiz éclair</a>
+      <a class="chip-btn glass" href="#/session/${code}/all?mode=flash">${icon('cards')} Cartes seules</a>
+    </div>
+    ${byLevel.map(({ lv, decks: list }) => `
+      <h2 class="section-title level-title"><span class="level">${lv}</span> ${LEVEL_NAMES[lv] || ''}</h2>
+      <section class="deck-grid">
+        ${list.map((d) => {
+          const c = counts(d.cards);
+          return `
+          <article class="deck glass" style="--rim:${d.hue};--hue:${d.hue}">
+            <a class="deck-hit" href="#/session/${code}/${d.id}">
+              <span class="orb big">${icon(d.icon)}</span>
+              <strong>${esc(d.title)}</strong>
+              <span class="desc">${esc(d.description || '')}</span>
+            </a>
+            ${progressBar(pct(c.seen, c.total), 'Mots vus')}
+            <span class="meta">${c.seen}/${c.total}${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
+            <span class="deck-links">
+              <a href="#/browse/${code}/${d.id}">${icon('eye')} Mots</a>
+              <a href="#/quiz/${code}/${d.id}">${icon('target')} Quiz</a>
+              ${d.custom ? `<button class="link" data-delete="${d.id}" aria-label="Supprimer ce paquet">${icon('x')}</button>` : ''}
+            </span>
+          </article>`;
+        }).join('')}
+      </section>`).join('')}
+    <details class="import glass">
       <summary>${icon('plus')} Créer mon propre paquet (CSV)</summary>
       <p class="muted small">Une ligne par carte : <code>français ; ${lang.name.toLowerCase()} ; exemple ; note</code>.
       Les deux dernières colonnes sont facultatives. Sépare les réponses possibles par « / ».</p>
       <form id="import-form">
-        <label>Nom du paquet <input name="title" required maxlength="60" placeholder="Ex. : Voyage à Londres"></label>
-        <label>Cartes <textarea name="csv" rows="6" placeholder="la gare ; the station ; Where is the station?"></textarea></label>
-        <label class="file">… ou un fichier <input type="file" name="file" accept=".csv,.tsv,.txt,text/csv"></label>
+        <label>Nom du paquet <input name="title" required maxlength="60" placeholder="Ex. : Mon voyage"></label>
+        <label>Cartes <textarea name="csv" rows="6" placeholder="la gare ; …"></textarea></label>
+        <label>… ou un fichier <input type="file" name="file" accept=".csv,.tsv,.txt,text/csv"></label>
         <button class="btn primary" type="submit">Ajouter le paquet</button>
       </form>
     </details>
@@ -259,302 +353,583 @@ async function viewLanguage(code) {
     const text = file ? await file.text() : form.csv.value;
     const cards = rowsToCards(parseCsv(text));
     if (!cards.length) return toast('Aucune carte trouvée : il faut au moins deux colonnes.');
-    const list = (store.customDecks[code] ||= []);
-    list.push({ id: `perso-${Date.now().toString(36)}`, title: form.title.value.trim(), icon: '📝', description: `${cards.length} cartes perso`, cards });
+    (store.customDecks[code] ||= []).push({
+      id: `perso-${Date.now().toString(36)}`, title: form.title.value.trim(), icon: 'pen', level: 'B1',
+      description: `${cards.length} cartes perso`, cards,
+    });
     save();
-    toast(`${cards.length} cartes ajoutées ✔`);
+    toast(`${cards.length} cartes ajoutées`);
     viewLanguage(code);
   });
 }
 
-// ---------- Vue : liste des cartes ----------
+// ---------- Liste des mots ----------
+
+function exampleHtml(card, lang, { highlight = true } = {}) {
+  if (!card.example) return '';
+  const cz = highlight ? clozeOf(card) : null;
+  const sentence = cz ? `${esc(cz.before)}<mark>${esc(cz.answer)}</mark>${esc(cz.after)}` : esc(card.example);
+  return `
+    <div class="example">
+      <p ${langAttrs(lang)}>${sentence} ${speakBtn(card.example, 'small')}</p>
+      ${card.exampleTr ? `<p class="translit">${esc(card.exampleTr)}</p>` : ''}
+      ${card.exampleFr ? `<p class="example-fr">${esc(card.exampleFr)}</p>` : ''}
+    </div>`;
+}
 
 async function viewBrowse(code, deckId) {
   setActiveTab('home');
   const lang = getLanguage(code);
-  const deck = (await loadDecks(code)).find((d) => d.id === deckId);
-  if (!deck) return (location.hash = `#/lang/${code}`);
+  const { decks } = await loadLanguage(code);
+  const deck = decks.find((d) => d.id === deckId);
+  if (!deck) return go(`#/lang/${code}`);
+  setTheme(deck.hue);
   render(`
-    ${banner(interleave([lang.flag], [deck.icon || '📝']), { compact: true })}
+    ${banner(interleave([code], [{ icon: deck.icon, hue: deck.hue }]), { compact: true })}
     ${pageHead({
       back: { href: `#/lang/${code}`, label: lang.name },
-      eyebrow: `${deck.cards.length} cartes`,
-      mark: esc(deck.icon || '📝'),
-      title: deck.title,
+      eyebrow: `${deck.level} · ${plural(deck.cards.length, 'mot')}`,
+      mark: icon(deck.icon),
+      title: esc(deck.title),
       lede: esc(deck.description || ''),
     })}
     <ul class="word-list">
       ${deck.cards.map((c) => {
-        const s = store.progress[c.id];
-        const status = isNew(s) ? 'Nouvelle' : isMature(s) ? 'Maîtrisée' : 'En cours';
+        const s = stateOf(c);
+        const status = isNew(s) ? 'Nouveau' : isMature(s) ? 'Maîtrisé' : 'En cours';
         return `
-        <li>
-          <div>
-            <strong lang="${code}" dir="${lang.dir}">${esc(c.term)}</strong>
-            ${c.translit ? `<span class="translit">${esc(c.translit)}</span>` : ''}
-            <span class="muted">${esc(c.fr)}</span>
-            ${c.note ? `<span class="note small">${esc(c.note)}</span>` : ''}
-          </div>
-          <div class="word-side">
-            <button class="icon-btn" data-say="${esc(c.term)}" aria-label="Écouter ${esc(c.term)}">${icon('speaker')}</button>
+        <li class="glass" style="--rim:${deck.hue}">
+          <div class="word-top">
+            <strong ${langAttrs(lang)}>${esc(c.term)}</strong>
+            ${speakBtn(c.term, 'small')}
             <span class="chip ${slug(status)}">${status}</span>
           </div>
+          ${c.translit ? `<span class="translit">${esc(c.translit)}</span>` : ''}
+          <span class="word-fr">${esc(c.fr)}</span>
+          ${exampleHtml(c, lang)}
+          ${c.note ? `<span class="note">${icon('lightbulb')} ${esc(c.note)}</span>` : ''}
         </li>`;
       }).join('')}
     </ul>
   `);
-  app.querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', () => speak(b.dataset.say, code)));
+  bindSpeak(app, code);
 }
 
-// ---------- Vue : séance de révision ----------
+// ---------- Séance (révisions, nouveaux mots, quiz) ----------
 
-function buildQueue(cards, deckId) {
+function buildQueue(cards, code, deckOnly, opts) {
   const now = Date.now();
-  const due = cards.filter((c) => isDue(store.progress[c.id], now))
-    .sort((a, b) => store.progress[a.id].due - store.progress[b.id].due);
-  const fresh = cards.filter((c) => isNew(store.progress[c.id])).slice(0, newLeftToday());
-  let queue = [...due, ...fresh];
-  // Rien à faire ? Révision libre des cartes déjà vues, les plus proches de l'échéance d'abord.
-  if (!queue.length && deckId) {
-    queue = cards.filter((c) => !isNew(store.progress[c.id]))
-      .sort((a, b) => store.progress[a.id].due - store.progress[b.id].due).slice(0, 20);
+  // Révisions dues, mélangées : alterner les thèmes aide à mieux retenir.
+  const due = shuffle(cards.filter((c) => isDue(stateOf(c), now)));
+  const fresh = cards.filter((c) => isNew(stateOf(c))).slice(0, newLeftToday(code));
+  let queue = due.map((card) => ({ card, kind: pickExercise(stateOf(card), card, opts) }));
+  // Les nouveaux mots arrivent intercalés entre les révisions.
+  fresh.forEach((card, i) => queue.splice(Math.min(queue.length, i * 2 + 1), 0, { card, kind: 'intro' }));
+  if (!queue.length && deckOnly) {
+    queue = cards.filter((c) => !isNew(stateOf(c)))
+      .sort((a, b) => stateOf(a).due - stateOf(b).due).slice(0, 15)
+      .map((card) => ({ card, kind: pickExercise(stateOf(card), card, opts) }));
   }
   return queue;
 }
 
-async function viewReview(code, deckId) {
+function buildQuiz(cards, opts) {
+  const seen = cards.filter((c) => !isNew(stateOf(c)));
+  const pool = seen.length >= 6 ? seen : cards;
+  return shuffle(pool).slice(0, 10).map((card) => ({ card, kind: pickQuizExercise(card, opts) }));
+}
+
+async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   setActiveTab('home');
   const lang = getLanguage(code);
-  const decks = await loadDecks(code);
+  if (!lang) return go('#/');
+  const { decks } = await loadLanguage(code);
   const scope = deckId === 'all' ? decks : decks.filter((d) => d.id === deckId);
-  if (!lang?.available || !scope.length) return (location.hash = `#/lang/${code}`);
+  if (!scope.length) return go(`#/lang/${code}`);
+  store.settings.lastLang = code;
+  save();
 
-  const queue = buildQueue(scope.flatMap((d) => d.cards), deckId !== 'all');
-  const total = queue.length;
-  const tally = { right: 0, again: 0 };
-  let done = 0;
-  let current = null;
-
+  const deckOf = Object.fromEntries(decks.map((d) => [d.id, d]));
+  const pool = decks.flatMap((d) => d.cards);
+  const byTerm = new Map(pool.map((c) => [c.term, c]));
+  const opts = { canListen: canSpeak(code), mode: mode || store.settings.mode };
+  const cards = scope.flatMap((d) => d.cards);
+  const queue = quiz ? buildQuiz(cards, opts) : buildQueue(cards, code, deckId !== 'all', opts);
   const back = `#/lang/${code}`;
-  const title = deckId === 'all' ? 'Séance du jour' : scope[0].title;
-  const iconOf = Object.fromEntries(decks.map((d) => [d.id, d.icon || '📝']));
+  const title = quiz ? 'Quiz éclair' : deckId === 'all' ? 'Séance du jour' : scope[0].title;
+  const total = new Set(queue.map((q) => q.card.id)).size;
+  const tally = { right: 0, wrong: 0, fresh: 0 };
+  const finished = new Set();
+  let keys = {};
 
   if (!total) {
+    setTheme(lang.hue);
     return render(`
-      ${banner(interleave([lang.flag], ['🎉', ...scope.map((d) => iconOf[d.id])]))}
+      ${banner(interleave([code], [{ icon: 'trophy', hue: '#f4c76b' }, { icon: 'star', hue: '#f4c76b' }]))}
       <section class="empty">
         <h1>Tout est à jour !</h1>
-        <p class="muted">Aucune carte à revoir pour l’instant et le quota de nouvelles cartes du jour est atteint.
-        Tu peux l’augmenter dans les <a href="#/settings">réglages</a>.</p>
+        <p class="muted">Aucune carte à revoir et le quota de nouveaux mots du jour est atteint.
+        Augmente-le dans les <a href="#/settings">réglages</a>, ou lance un quiz.</p>
+        <div class="btn-row center">
+          <a class="btn primary" href="#/quiz/${code}/${deckId}">${icon('target')} Quiz éclair</a>
+          <a class="btn" href="${back}">Retour</a>
+        </div>
       </section>`);
+  }
+
+  const onKey = (e) => {
+    const typing = e.target.matches('input, textarea');
+    if (e.key === 'Enter' && keys.enter && !(typing && !keys.enterInInput)) { e.preventDefault(); keys.enter(); return; }
+    if (typing) return;
+    if (e.key === ' ' && keys.space) { e.preventDefault(); keys.space(); return; }
+    if (/^[1-4]$/.test(e.key) && keys.num) keys.num(Number(e.key) - 1);
+  };
+  document.addEventListener('keydown', onKey);
+  // Mode concentration : pas de barre d'onglets, boutons d'action toujours visibles.
+  document.body.classList.add('in-session');
+  const stop = () => {
+    document.removeEventListener('keydown', onKey);
+    document.body.classList.remove('in-session');
+  };
+  cleanup = stop;
+
+  const $ = (sel) => app.querySelector(sel);
+  const controls = (html) => { $('#controls').innerHTML = html; bindSpeak($('#controls'), code); };
+
+  function frame(card, label, kindIcon, body) {
+    const d = deckOf[card.deckId];
+    setTheme(d.hue);
+    render(`
+      <div class="session">
+        <header class="session-head">
+          <a class="icon-btn ghost" href="${back}" aria-label="Quitter la séance">${icon('x')}</a>
+          <div class="progress wide" role="progressbar" aria-valuenow="${finished.size}" aria-valuemin="0" aria-valuemax="${total}" aria-label="Progression">
+            <span style="width:${pct(finished.size, total)}%"></span>
+          </div>
+          <span class="counter">${finished.size}/${total}</span>
+        </header>
+        ${banner(interleave([code], [{ icon: d.icon, hue: d.hue }]), { compact: true })}
+        <p class="kind-chip">${icon(kindIcon)} <span>${label}</span><span class="sep">·</span><span class="muted">${esc(quiz ? title : d.title)}</span></p>
+        <article class="exercise glass" style="--rim:${d.hue}" aria-live="polite">${body}</article>
+        <div id="controls" class="controls"></div>
+      </div>`);
+    bindSpeak(app, code);
+    keys = {};
+  }
+
+  function termBlock(card, cls = '') {
+    return `
+      <div class="term ${cls}">
+        <span class="term-text glow" ${langAttrs(lang)}>${esc(card.term)}</span>
+        ${speakBtn(card.term)}
+      </div>
+      ${card.translit ? `<div class="translit">${esc(card.translit)}</div>` : ''}`;
+  }
+
+  function answerBlock(card) {
+    return `
+      <div class="answer-block">
+        ${termBlock(card, 'small')}
+        <div class="fr">${esc(card.fr)}</div>
+        ${exampleHtml(card, lang)}
+        ${card.note ? `<p class="note">${icon('lightbulb')} ${esc(card.note)}</p>` : ''}
+      </div>`;
   }
 
   function next() {
-    current = queue.shift();
-    if (!current) return finish();
-    const { direction } = store.settings;
-    current.showFr = direction === 'fr' || (direction === 'mixed' && Math.random() < 0.5);
-    drawCard();
+    const item = queue.shift();
+    if (!item) return finish();
+    (RENDERERS[item.kind] || RENDERERS[KINDS.MCQ_MEANING])(item.card);
   }
 
-  function drawCard() {
-    const c = current;
-    const typing = store.settings.typing;
-    const prompt = c.showFr ? c.fr : c.term;
-    const promptAttrs = c.showFr ? 'lang="fr"' : `lang="${code}" dir="${lang.dir}"`;
-    render(`
-      <header class="review-head">
-        <a class="back" href="${back}" aria-label="Quitter la séance">${icon('x')}</a>
-        <div class="progress wide" role="progressbar" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}" aria-label="Progression de la séance">
-          <span style="width:${(done / total) * 100}%"></span>
-        </div>
-        <span class="muted small">${done}/${total}</span>
-      </header>
-      ${banner(interleave([lang.flag], [iconOf[c.deckId]]), { compact: true })}
-      <p class="review-meta">${esc(title)} · ${c.showFr ? `Français → ${lang.name}` : `${lang.name} → Français`}</p>
-      <article class="flashcard" aria-live="polite">
-        <div class="prompt" ${promptAttrs}>${esc(prompt)}</div>
-        ${!c.showFr ? `<button class="icon-btn speak" data-say aria-label="Écouter">${icon('speaker')}</button>` : ''}
-        <div id="answer" hidden></div>
-      </article>
-      <div id="controls">
-        ${typing ? `
-          <form id="type-form" class="type-form" autocomplete="off">
-            <input name="guess" ${c.showFr ? `lang="${code}" dir="${lang.dir}"` : 'lang="fr"'} placeholder="Ta réponse…" autocapitalize="off" spellcheck="false" aria-label="Ta réponse">
-            <button class="btn primary" type="submit">Vérifier</button>
-          </form>` : `
-          <button class="btn primary full" id="reveal">Afficher la réponse <kbd>Espace</kbd></button>`}
-      </div>
-    `);
-    if (!c.showFr && store.settings.autoSpeak) speak(c.term, code);
-    app.querySelector('[data-say]')?.addEventListener('click', () => speak(c.term, code));
-    if (typing) {
-      const form = app.querySelector('#type-form');
-      form.guess.focus();
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const guess = form.guess.value;
-        reveal({ guess, ok: checkAnswer(guess, c.showFr ? c.term : c.fr) });
-      });
+  // Enregistre le résultat d'un exercice.
+  function settle(card, grade) {
+    const prev = stateOf(card);
+    const ok = grade !== GRADES.AGAIN;
+    if (ok) tally.right++; else tally.wrong++;
+    if (quiz) {
+      finished.add(card.id);
+      logReview(false, ok, code);
     } else {
-      app.querySelector('#reveal').addEventListener('click', () => reveal());
+      store.progress[card.id] = review(prev, grade);
+      logReview(isNew(prev), ok, code);
+      if (ok) finished.add(card.id);
+      else queue.splice(Math.min(queue.length, 3), 0, { card, kind: pickExercise(stateOf(card), card, opts) });
     }
-  }
-
-  function reveal(typed) {
-    const c = current;
-    const answer = c.showFr ? c.term : c.fr;
-    const answerAttrs = c.showFr ? `lang="${code}" dir="${lang.dir}"` : 'lang="fr"';
-    const box = app.querySelector('#answer');
-    box.hidden = false;
-    box.innerHTML = `
-      <hr>
-      ${typed ? `<p class="verdict ${typed.ok ? 'ok' : 'ko'}">${typed.ok ? `${icon('check')} Bonne réponse` : `${icon('x')} Ta réponse : « ${esc(typed.guess || '—')} »`}</p>` : ''}
-      <div class="answer" ${answerAttrs}>${esc(answer)}</div>
-      ${c.translit ? `<div class="translit">${esc(c.translit)}</div>` : ''}
-      ${c.example ? `<p class="example" lang="${code}" dir="${lang.dir}">
-        <button class="icon-btn small" data-say-example aria-label="Écouter l’exemple">${icon('speaker')}</button> ${esc(c.example)}</p>` : ''}
-      ${c.note ? `<p class="note">💡 ${esc(c.note)}</p>` : ''}
-    `;
-    if (c.showFr) {
-      box.querySelector('.answer').insertAdjacentHTML('beforeend', ` <button class="icon-btn small" data-say-term aria-label="Écouter">${icon('speaker')}</button>`);
-      box.querySelector('[data-say-term]').addEventListener('click', () => speak(c.term, code));
-      if (store.settings.autoSpeak) speak(c.term, code);
-    }
-    box.querySelector('[data-say-example]')?.addEventListener('click', () => speak(c.example, code));
-
-    const labels = ['À revoir', 'Difficile', 'Bien', 'Facile'];
-    const previews = previewIntervals(store.progress[c.id]);
-    const suggested = typed ? (typed.ok ? GRADES.GOOD : GRADES.AGAIN) : null;
-    app.querySelector('#controls').innerHTML = `
-      <div class="grades" role="group" aria-label="Évalue ta réponse">
-        ${labels.map((label, g) => `
-          <button class="grade g${g} ${g === suggested ? 'suggested' : ''}" data-grade="${g}">
-            <span>${label}</span><small>${previews[g]}</small><kbd>${g + 1}</kbd>
-          </button>`).join('')}
-      </div>`;
-    app.querySelectorAll('[data-grade]').forEach((b) => b.addEventListener('click', () => grade(Number(b.dataset.grade))));
-    (app.querySelector('.grade.suggested') || app.querySelector('.grade.g2')).focus({ preventScroll: true });
-  }
-
-  function grade(g) {
-    const c = current;
-    const prev = store.progress[c.id];
-    store.progress[c.id] = review(prev, g);
-    logReview(isNew(prev));
     save();
-    if (g === GRADES.AGAIN) {
-      tally.again++;
-      queue.splice(Math.min(queue.length, 3), 0, c); // elle revient un peu plus tard
-    } else {
-      tally.right++;
-      done++;
-    }
-    next();
   }
+
+  // Correction immédiate, puis « Continuer ».
+  function showResult(card, { ok, close = false, given }) {
+    const verdict = ok
+      ? `<p class="verdict ok">${icon('check')} ${close ? 'Presque ! Attention à l’orthographe' : 'Bonne réponse'}</p>`
+      : `<p class="verdict ko">${icon('x')} ${given !== undefined ? `Ta réponse : « ${esc(given)} »` : 'Pas tout à fait'}</p>`;
+    const zone = document.createElement('div');
+    zone.className = 'result';
+    zone.innerHTML = verdict + answerBlock(card);
+    $('.exercise').append(zone);
+    $('.exercise').classList.add(ok ? 'is-ok' : 'is-ko');
+    bindSpeak(zone, code);
+    if (store.settings.autoSpeak && canSpeak(code)) speak(card.term, code);
+    let grade = ok ? (close ? GRADES.HARD : GRADES.GOOD) : GRADES.AGAIN;
+    controls(`
+      ${!ok && given ? '<button type="button" class="link small center-link" id="override">J’avais raison (synonyme)</button>' : ''}
+      <button type="button" class="btn primary full" id="continue">Continuer <kbd>Entrée</kbd></button>`);
+    $('#override')?.addEventListener('click', (e) => {
+      grade = GRADES.GOOD;
+      zone.querySelector('.verdict').outerHTML = `<p class="verdict ok">${icon('check')} Compté comme juste</p>`;
+      e.currentTarget.remove();
+    });
+    const proceed = () => { keys = {}; settle(card, grade); next(); };
+    $('#continue').addEventListener('click', proceed);
+    $('#continue').focus({ preventScroll: true });
+    keys = { enter: proceed, enterInInput: true };
+  }
+
+  function choiceButtons(options, inTarget) {
+    return `<div class="choices">${options.map((o, i) => {
+      const c = inTarget ? byTerm.get(o) : null;
+      return `<button type="button" class="choice" data-i="${i}">
+        <kbd>${i + 1}</kbd><span ${inTarget ? langAttrs(lang) : ''}>${esc(o)}</span>${c?.translit ? `<small class="translit">${esc(c.translit)}</small>` : ''}
+      </button>`;
+    }).join('')}</div>`;
+  }
+
+  function bindChoices(card, options, correct) {
+    const pick = (i) => {
+      if (options[i] === undefined || $('.choice[disabled]')) return;
+      const ok = options[i] === correct;
+      app.querySelectorAll('.choice').forEach((b, j) => {
+        b.disabled = true;
+        if (options[j] === correct) b.classList.add('right');
+        else if (j === i) b.classList.add('wrong');
+      });
+      showResult(card, { ok });
+    };
+    app.querySelectorAll('.choice').forEach((b) => b.addEventListener('click', () => pick(Number(b.dataset.i))));
+    keys = { num: pick };
+  }
+
+  function typeForm(placeholder, attrs) {
+    return `
+      <form class="type-form" autocomplete="off">
+        <input name="guess" ${attrs} placeholder="${esc(placeholder)}" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Ta réponse">
+        <button class="btn primary" type="submit" aria-label="Vérifier">${icon('check')}</button>
+      </form>
+      <button type="button" class="link small" id="hint">${icon('lightbulb')} Un indice ?</button>`;
+  }
+
+  function bindType(card, answers, hintText) {
+    const form = $('.type-form');
+    let hinted = false;
+    form.guess.focus();
+    $('#hint').addEventListener('click', (e) => {
+      hinted = true;
+      e.currentTarget.outerHTML = `<p class="hint">${hintText}</p>`;
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const given = form.guess.value;
+      if (!given.trim()) return form.guess.focus();
+      const res = gradeTyped(given, ...answers);
+      form.remove();
+      $('#hint')?.remove();
+      // Un indice utilisé plafonne la note à « Difficile ».
+      showResult(card, { ok: res !== 'wrong', close: res === 'close' || (hinted && res === 'exact'), given });
+    });
+  }
+
+  function hintFor(answer) {
+    const b = bare(alternatives(answer)[0]);
+    const letters = b.replace(/\s/g, '').length;
+    return `Commence par « <b>${esc(b.slice(0, Math.max(1, Math.ceil(b.length / 4))))}</b>… » · ${plural(letters, 'lettre')}`;
+  }
+
+  const RENDERERS = {
+    intro(card) {
+      tally.fresh++;
+      frame(card, 'Nouveau mot', 'sparkle', `
+        <div class="intro">
+          <span class="new-badge">${icon('star')} Nouveau</span>
+          ${termBlock(card)}
+          <div class="fr big-fr">${esc(card.fr)}</div>
+          ${exampleHtml(card, lang)}
+          ${card.note ? `<p class="note">${icon('lightbulb')} ${esc(card.note)}</p>` : ''}
+        </div>`);
+      if (store.settings.autoSpeak && canSpeak(code)) speak(card.term, code);
+      controls(`<button type="button" class="btn primary full" id="got">Je le retiens <kbd>Entrée</kbd></button>`);
+      const proceed = () => {
+        keys = {};
+        // Test juste après un ou deux autres exercices : rappel à court terme.
+        queue.splice(Math.min(queue.length, 2), 0, { card, kind: pickExercise(stateOf(card), card, opts) });
+        next();
+      };
+      $('#got').addEventListener('click', proceed);
+      keys = { enter: proceed };
+    },
+
+    [KINDS.MCQ_MEANING](card) {
+      const options = choicesFor(card, pool, 'fr');
+      frame(card, KIND_LABELS[KINDS.MCQ_MEANING], 'target', `<div class="prompt">${termBlock(card)}</div>${choiceButtons(options, false)}`);
+      bindChoices(card, options, card.fr);
+    },
+
+    [KINDS.MCQ_TERM](card) {
+      const options = choicesFor(card, pool, 'term');
+      frame(card, KIND_LABELS[KINDS.MCQ_TERM], 'target', `<div class="prompt"><span class="prompt-fr glow">${esc(card.fr)}</span></div>${choiceButtons(options, true)}`);
+      bindChoices(card, options, card.term);
+    },
+
+    [KINDS.LISTEN](card) {
+      const options = choicesFor(card, pool, 'fr');
+      frame(card, KIND_LABELS[KINDS.LISTEN], 'headphones', `
+        <div class="prompt listen">
+          <button type="button" class="play" data-say="${esc(card.term)}" aria-label="Réécouter">${icon('speaker')}</button>
+          <p class="muted small">Qu’as-tu entendu ? Touche le haut-parleur pour réécouter.</p>
+        </div>${choiceButtons(options, false)}`);
+      setTimeout(() => speak(card.term, code), 250);
+      bindChoices(card, options, card.fr);
+    },
+
+    [KINDS.CLOZE_MCQ](card) {
+      const cz = clozeOf(card);
+      if (!cz) return RENDERERS[KINDS.MCQ_TERM](card);
+      const options = choicesFor(card, pool, 'bare', Math.random, 4, cz.answer);
+      frame(card, KIND_LABELS[KINDS.CLOZE_MCQ], 'quote', `
+        <div class="prompt cloze">
+          <p class="sentence" ${langAttrs(lang)}>${esc(cz.before)}<span class="blank">?</span>${esc(cz.after)}</p>
+          <p class="example-fr">${esc(card.exampleFr || `(${card.fr})`)}</p>
+        </div>${choiceButtons(options, true)}`);
+      bindChoices(card, options, cz.answer);
+    },
+
+    [KINDS.CLOZE_TYPE](card) {
+      const cz = clozeOf(card);
+      if (!cz) return RENDERERS[KINDS.TYPE](card);
+      frame(card, KIND_LABELS[KINDS.CLOZE_TYPE], 'pen', `
+        <div class="prompt cloze">
+          <p class="sentence" ${langAttrs(lang)}>${esc(cz.before)}<span class="blank">?</span>${esc(cz.after)}</p>
+          <p class="example-fr">${esc(card.exampleFr || '')} <span class="muted">(${esc(card.fr)})</span></p>
+          ${typeForm('Le mot manquant…', langAttrs(lang))}
+        </div>`);
+      bindType(card, [cz.answer, card.term, card.translit], hintFor(cz.answer));
+    },
+
+    [KINDS.TYPE](card) {
+      frame(card, KIND_LABELS[KINDS.TYPE], 'pen', `
+        <div class="prompt">
+          <span class="prompt-fr glow">${esc(card.fr)}</span>
+          ${typeForm(`En ${lang.name.toLowerCase()}…`, langAttrs(lang))}
+          ${card.translit ? '<p class="muted small form-note">Écriture locale ou lettres latines : les deux sont acceptées.</p>' : ''}
+        </div>`);
+      bindType(card, [card.term, card.translit], hintFor(card.translit || card.term));
+    },
+
+    [KINDS.FLASH](card) {
+      const showFr = Math.random() < 0.5;
+      frame(card, KIND_LABELS[KINDS.FLASH], 'cards', `
+        <div class="prompt">${showFr ? `<span class="prompt-fr glow">${esc(card.fr)}</span>` : termBlock(card)}</div>`);
+      controls(`<button type="button" class="btn primary full" id="reveal">Voir la réponse <kbd>Espace</kbd></button>`);
+      const reveal = () => {
+        const zone = document.createElement('div');
+        zone.className = 'result';
+        zone.innerHTML = answerBlock(card);
+        $('.exercise').append(zone);
+        bindSpeak(zone, code);
+        const labels = ['À revoir', 'Difficile', 'Bien', 'Facile'];
+        const previews = previewIntervals(stateOf(card));
+        controls(`<div class="grades" role="group" aria-label="Évalue ta réponse">${labels.map((l, g) => `
+          <button type="button" class="grade g${g}" data-g="${g}"><span>${l}</span><small>${previews[g]}</small><kbd>${g + 1}</kbd></button>`).join('')}</div>`);
+        const grade = (g) => { keys = {}; settle(card, g); next(); };
+        app.querySelectorAll('[data-g]').forEach((b) => b.addEventListener('click', () => grade(Number(b.dataset.g))));
+        keys = { num: grade };
+      };
+      $('#reveal').addEventListener('click', reveal);
+      keys = { space: reveal, enter: reveal };
+    },
+  };
 
   function finish() {
-    document.removeEventListener('keydown', onKey);
+    stop();
+    setTheme(lang.hue);
+    const answered = tally.right + tally.wrong;
+    const score = answered ? pct(tally.right, answered) : 100;
     render(`
-      ${banner(interleave([lang.flag], ['🎉', ...scope.map((d) => iconOf[d.id]), '⭐']))}
+      ${banner(interleave([code], [{ icon: 'trophy', hue: '#f4c76b' }, { icon: 'star', hue: '#f4c76b' }, { icon: 'flame', hue: '#f09a6a' }]))}
       <section class="empty">
-        <h1>Séance terminée !</h1>
-        <p class="muted">${done} carte${done > 1 ? 's' : ''} révisée${done > 1 ? 's' : ''}${tally.again ? `, ${tally.again} erreur${tally.again > 1 ? 's' : ''} rattrapée${tally.again > 1 ? 's' : ''}` : ' sans erreur'}.</p>
-        <p class="saved">${icon('flame')} Série : ${streak()} jour${streak() > 1 ? 's' : ''}</p>
-        <a class="btn primary" href="${back}">Retour aux paquets</a>
+        <p class="kicker">${quiz ? 'Quiz terminé' : 'Séance terminée'}</p>
+        <p class="score glow-gold">${score}<small>%</small></p>
+        <p class="muted">${plural(tally.right, 'bonne réponse', 'bonnes réponses')} sur ${answered}${tally.fresh ? ` · ${plural(tally.fresh, 'nouveau mot', 'nouveaux mots')}` : ''}</p>
+        <p class="saved">${icon('flame')} ${plural(streak(), 'jour')} d’affilée</p>
+        <div class="btn-row center">
+          <a class="btn primary" href="${back}">Continuer</a>
+          <a class="btn" href="#/quiz/${code}/${deckId}">${icon('target')} ${quiz ? 'Rejouer' : 'Quiz éclair'}</a>
+        </div>
       </section>`);
   }
 
-  function onKey(e) {
-    if (!location.hash.startsWith('#/review/')) return document.removeEventListener('keydown', onKey);
-    if (e.target.matches('input, textarea')) return;
-    const revealBtn = app.querySelector('#reveal');
-    if ((e.key === ' ' || e.key === 'Enter') && revealBtn) { e.preventDefault(); revealBtn.click(); }
-    else if (['1', '2', '3', '4'].includes(e.key) && app.querySelector('[data-grade]')) grade(Number(e.key) - 1);
-  }
-  document.addEventListener('keydown', onKey);
   next();
 }
 
-// ---------- Vue : statistiques ----------
+// ---------- Statistiques ----------
 
 async function viewStats() {
   setActiveTab('stats');
+  setTheme('#82b8db');
+  const now = new Date();
   const days = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
+    const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const key = today(d);
-    days.push({ key, date: d, label: d.toLocaleDateString('fr-FR', { weekday: 'narrow' }), n: store.history[key]?.reviews || 0 });
+    days.push({ date: d, n: store.history[today(d)]?.reviews || 0 });
   }
-  const max = Math.max(1, ...days.map((d) => d.n));
   const totalReviews = Object.values(store.history).reduce((s, d) => s + d.reviews, 0);
-  const states = Object.values(store.progress);
-  const seen = states.filter((s) => !isNew(s)).length;
-  const mature = states.filter(isMature).length;
+  const acc = accuracy(30);
 
-  const perLang = await Promise.all(LANGUAGES.filter((l) => l.available).map(async (l) => {
-    const decks = await loadDecks(l.code);
-    return { l, decks: decks.map((d) => ({ d, c: deckCounts(d.cards) })) };
+  const langs = await Promise.all(LANGUAGES.map(async (l) => {
+    const { decks } = await loadLanguage(l.code);
+    const cards = decks.flatMap((d) => d.cards);
+    const stages = { neuf: 0, apprentissage: 0, jeune: 0, maitrise: 0 };
+    for (const c of cards) {
+      const s = stateOf(c);
+      if (isNew(s)) stages.neuf++;
+      else if (s.interval < 7) stages.apprentissage++;
+      else if (s.interval < 21) stages.jeune++;
+      else stages.maitrise++;
+    }
+    return { l, cards, stages };
   }));
+  const seen = langs.reduce((s, x) => s + x.cards.length - x.stages.neuf, 0);
+  const mature = langs.reduce((s, x) => s + x.stages.maitrise, 0);
+
+  // Prévision : cartes à revoir sur les 7 prochains jours (le 1er jour inclut le retard).
+  const forecast = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    d.setHours(23, 59, 59, 999);
+    return { date: d, n: 0 };
+  });
+  for (const { cards } of langs) {
+    for (const c of cards) {
+      const s = stateOf(c);
+      if (isNew(s)) continue;
+      const slot = forecast.find((f) => s.due <= f.date.getTime());
+      if (slot) slot.n++;
+    }
+  }
+
+  const bars = (list, labelFn, tipFn) => {
+    const max = Math.max(1, ...list.map((d) => d.n));
+    return `<div class="bars">${list.map((d) => `
+      <div class="bar-col" tabindex="0" data-tip="${esc(tipFn(d))}">
+        <span class="bar-val">${d.n || ''}</span>
+        <span class="bar" style="height:${(d.n / max) * 100}%"></span>
+        <span class="bar-label">${labelFn(d)}</span>
+      </div>`).join('')}</div>`;
+  };
+  const STAGES = [['maitrise', 'Maîtrisés'], ['jeune', 'Bien partis'], ['apprentissage', 'En apprentissage'], ['neuf', 'Pas encore vus']];
+  const weekday = (d) => d.date.toLocaleDateString('fr-FR', { weekday: 'narrow' });
 
   render(`
-    ${banner(interleave(LANGUAGES.filter((l) => l.available).map((l) => l.flag), ['📈', '🔥', '🎯']))}
-    ${pageHead({ eyebrow: 'Carnet de bord', title: 'Statistiques', lede: 'Ce que tu as déjà parcouru.' })}
+    ${banner(interleave(LANGUAGES.map((l) => l.code), [{ icon: 'chart', hue: '#82b8db' }, { icon: 'flame', hue: '#f09a6a' }, { icon: 'target', hue: '#f4c76b' }]))}
+    ${pageHead({ eyebrow: 'Carnet de bord', mark: icon('chart'), title: 'Statistiques', lede: 'Ce que tu as déjà parcouru.' })}
     <section class="tiles">
-      <div class="tile"><span class="tile-value">${streak()}</span><span class="tile-label">jours d’affilée</span></div>
-      <div class="tile"><span class="tile-value">${seen}</span><span class="tile-label">cartes vues</span></div>
-      <div class="tile"><span class="tile-value">${mature}</span><span class="tile-label">maîtrisées</span></div>
-      <div class="tile"><span class="tile-value">${totalReviews}</span><span class="tile-label">révisions</span></div>
+      <div class="tile glass" style="--rim:var(--gold)"><span class="tile-value glow-gold">${streak()}</span><span class="tile-label">jours d’affilée</span></div>
+      <div class="tile glass"><span class="tile-value">${seen}</span><span class="tile-label">mots vus</span></div>
+      <div class="tile glass"><span class="tile-value">${mature}</span><span class="tile-label">maîtrisés</span></div>
+      <div class="tile glass"><span class="tile-value">${acc === null ? '—' : `${Math.round(acc * 100)}<small>%</small>`}</span><span class="tile-label">réussite (30 j)</span></div>
     </section>
-    <h2 class="section-title">Révisions sur 14 jours</h2>
-    <figure class="chart" aria-label="Nombre de révisions par jour sur les 14 derniers jours">
-      <div class="bars">
-        ${days.map((d) => `
-          <div class="bar-col" tabindex="0" data-tip="${d.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} : ${d.n} révision${d.n > 1 ? 's' : ''}">
-            <span class="bar" style="height:${(d.n / max) * 100}%"></span>
-            <span class="bar-label">${d.label}</span>
-          </div>`).join('')}
-      </div>
-      <figcaption class="muted small">Maximum : ${max} révisions/jour. Survole ou touche une barre pour le détail.</figcaption>
+
+    <h2 class="section-title">Activité · 14 derniers jours</h2>
+    <figure class="chart glass" aria-label="Révisions par jour sur 14 jours">
+      ${bars(days, weekday, (d) => `${d.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} : ${plural(d.n, 'révision')}`)}
+      <figcaption class="muted small">${plural(totalReviews, 'révision')} au total.</figcaption>
     </figure>
-    ${perLang.map(({ l, decks }) => `
-      <h2 class="section-title">${l.flag} ${l.name}</h2>
-      <table class="stats-table">
-        <thead><tr><th>Paquet</th><th>Vues</th><th>Maîtrisées</th><th>À revoir</th></tr></thead>
-        <tbody>
-          ${decks.map(({ d, c }) => `<tr><td>${esc(d.title)}</td><td>${c.seen}/${c.total}</td><td>${c.mature}</td><td>${c.due}</td></tr>`).join('')}
-        </tbody>
-      </table>`).join('')}
-    <p class="muted small">Une carte est « maîtrisée » quand elle n’est plus demandée qu’une fois toutes les 3 semaines ou moins souvent.</p>
+
+    <h2 class="section-title">À revoir · 7 prochains jours</h2>
+    <figure class="chart glass forecast" aria-label="Cartes à revoir sur les 7 prochains jours">
+      ${bars(forecast, weekday, (d) => `${d.date.toLocaleDateString('fr-FR', { weekday: 'long' })} : ${plural(d.n, 'carte')}`)}
+      <figcaption class="muted small">Le premier jour inclut les cartes déjà en retard.</figcaption>
+    </figure>
+
+    <h2 class="section-title">Progression par langue</h2>
+    <div class="legend">${STAGES.map(([k, l]) => `<span><i class="sw ${k}"></i>${l}</span>`).join('')}</div>
+    <section class="stage-list">
+      ${langs.map(({ l, cards, stages }) => `
+        <div class="stage-row glass" style="--rim:${l.hue}">
+          <div class="stage-head"><span class="lang-flag sm">${flag(l.code)}</span><strong>${l.name}</strong><span class="muted small">${cards.length - stages.neuf}/${cards.length} vus</span></div>
+          <div class="stack" role="img" aria-label="${STAGES.map(([k, lab]) => `${lab} : ${stages[k]}`).join(', ')}">
+            ${STAGES.map(([k, lab]) => (stages[k] ? `<span class="seg ${k}" style="flex:${stages[k]}" title="${lab} : ${stages[k]}"></span>` : '')).join('')}
+          </div>
+        </div>`).join('')}
+    </section>
+    <table class="stats-table glass">
+      <thead><tr><th>Langue</th>${STAGES.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead>
+      <tbody>${langs.map(({ l, stages }) => `<tr><td>${l.name}</td>${STAGES.map(([k]) => `<td>${stages[k]}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>
+    <p class="muted small">« Maîtrisé » : la carte ne revient plus qu’une fois toutes les 3 semaines, ou moins souvent.</p>
   `);
 }
 
-// ---------- Vue : réglages ----------
+// ---------- Méthode ----------
+
+function viewMethod() {
+  setActiveTab('method');
+  setTheme('#c79bf2');
+  const P = (ic, title, text) => `
+    <article class="principle glass">
+      <span class="orb" style="--hue:var(--theme)">${icon(ic)}</span>
+      <div><h3>${title}</h3><p>${text}</p></div>
+    </article>`;
+  render(`
+    ${banner(interleave(LANGUAGES.map((l) => l.code), [{ icon: 'lightbulb', hue: '#c79bf2' }, { icon: 'target', hue: '#f4c76b' }, { icon: 'clock', hue: '#82d0c0' }]))}
+    ${pageHead({ eyebrow: 'Comment ça marche', mark: icon('lightbulb'), title: 'La méthode', lede: 'Lingua s’appuie sur les techniques d’apprentissage les mieux étayées par la recherche.' })}
+    <section class="principles">
+      ${P('target', 'Se tester plutôt que relire', 'Aller chercher une réponse dans sa mémoire la renforce bien plus que relire une liste. Presque tout est donc un exercice, même les nouveaux mots, testés juste après leur découverte.')}
+      ${P('clock', 'Espacer les révisions', 'Chaque mot revient juste avant que tu l’oublies : le lendemain, puis 3 jours, une semaine, un mois… Les mots faciles reviennent de moins en moins, les difficiles plus souvent.')}
+      ${P('layers', 'Difficulté progressive', 'Reconnaître un mot (QCM), le retrouver dans une phrase, puis l’écrire ou le comprendre à l’oral. Plus l’effort de rappel est grand, plus le mot s’ancre, tant qu’il reste à ta portée.')}
+      ${P('shuffle', 'Mélanger les thèmes', 'La séance du jour alterne les paquets au lieu de les enchaîner : il faut reconnaître le bon mot, pas réciter une liste dans l’ordre.')}
+      ${P('quote', 'Toujours du contexte', 'Chaque mot vient avec une phrase d’exemple traduite, et l’audio quand ton appareil a la voix. On retient mieux ce qu’on comprend en situation.')}
+      ${P('bolt', 'Correction immédiate', 'Tu vois tout de suite la bonne réponse, l’exemple et les pièges. Les petites fautes de frappe sont tolérées et tu peux faire accepter un synonyme.')}
+    </section>
+    <p class="notice">${icon('chat')} <span><b>Pour parler couramment</b>, une appli ne suffit pas : Lingua construit ton vocabulaire et tes automatismes. Combine-la avec de vraies conversations (tandem, cours, voyages), des séries et des podcasts. Une courte séance chaque jour vaut mieux qu’une longue par semaine.</span></p>
+    <h2 class="section-title">Sources</h2>
+    <ul class="sources glass">
+      <li>Dunlosky et al. (2013), « Improving Students’ Learning With Effective Learning Techniques », <i>Psychological Science in the Public Interest</i>. Le test et l’espacement y sont jugés les techniques les plus utiles. <a href="https://journals.sagepub.com/doi/abs/10.1177/1529100612453266" rel="noopener" target="_blank">Lien</a></li>
+      <li>Roediger & Karpicke (2006), « Test-Enhanced Learning », <i>Psychological Science</i>, 17, 249-255. <a href="https://journals.sagepub.com/doi/10.1111/j.1467-9280.2006.01693.x" rel="noopener" target="_blank">Lien</a></li>
+      <li>Cepeda et al. (2006), « Distributed Practice in Verbal Recall Tasks », <i>Psychological Bulletin</i>, 132(3), 354-380. <a href="https://digitalcommons.usf.edu/psy_facpub/1771/" rel="noopener" target="_blank">Lien</a></li>
+    </ul>
+  `);
+}
+
+// ---------- Réglages ----------
 
 function viewSettings() {
   setActiveTab('settings');
+  setTheme('#82d0c0');
   const s = store.settings;
   render(`
-    ${banner(interleave(LANGUAGES.map((l) => l.flag), ['🧭', '🎧']))}
-    ${pageHead({ eyebrow: 'Carnet de langues', title: 'Réglages', lede: 'Adapte les séances à ton rythme.' })}
-    <form id="settings" class="settings">
+    ${banner(interleave(LANGUAGES.map((l) => l.code), [{ icon: 'sliders', hue: '#82d0c0' }, { icon: 'headphones', hue: '#c79bf2' }]))}
+    ${pageHead({ eyebrow: 'Carnet de langues', mark: icon('sliders'), title: 'Réglages', lede: 'Adapte les séances à ton rythme.' })}
+    <form id="settings" class="settings glass">
       <fieldset>
-        <legend>Sens des cartes</legend>
-        <label><input type="radio" name="direction" value="mixed" ${s.direction === 'mixed' ? 'checked' : ''}> Mélangé (recommandé)</label>
-        <label><input type="radio" name="direction" value="fr" ${s.direction === 'fr' ? 'checked' : ''}> Français → langue étudiée</label>
-        <label><input type="radio" name="direction" value="target" ${s.direction === 'target' ? 'checked' : ''}> Langue étudiée → français</label>
+        <legend>Type d’exercices</legend>
+        <label><input type="radio" name="mode" value="auto" ${s.mode !== 'flash' ? 'checked' : ''}> Varié et progressif (recommandé)</label>
+        <label><input type="radio" name="mode" value="flash" ${s.mode === 'flash' ? 'checked' : ''}> Cartes à retourner uniquement</label>
       </fieldset>
-      <label class="row">Nouvelles cartes par jour
+      <label class="row">Nouveaux mots par jour et par langue
         <input type="number" name="newPerDay" min="0" max="100" value="${s.newPerDay}">
-      </label>
-      <label class="row switch"><span>Écrire ma réponse avant de la voir</span>
-        <input type="checkbox" name="typing" ${s.typing ? 'checked' : ''}>
       </label>
       <label class="row switch"><span>Prononcer automatiquement</span>
         <input type="checkbox" name="autoSpeak" ${s.autoSpeak ? 'checked' : ''}>
       </label>
     </form>
+
+    <h2 class="section-title">Voix sur cet appareil</h2>
+    <ul class="voices glass">
+      ${LANGUAGES.map((l) => `<li><span class="lang-flag sm">${flag(l.code)}</span><span>${l.name}</span>
+        ${canSpeak(l.code) ? `<span class="chip maitrise">${icon('check')} ${esc(voiceFor(l.code).name)}</span>` : '<span class="chip">Aucune : pas d’exercices d’écoute</span>'}</li>`).join('')}
+    </ul>
 
     <h2 class="section-title">Sauvegarde</h2>
     <p class="muted small">Ta progression est enregistrée uniquement sur cet appareil. Exporte-la pour la garder ou la transférer.</p>
@@ -563,14 +938,13 @@ function viewSettings() {
       <label class="btn">Importer<input type="file" id="import" accept="application/json,.json" hidden></label>
       <button class="btn danger" id="reset">Tout effacer</button>
     </div>
-    <p class="muted small about">Lingua · les données restent sur ton appareil, aucun compte nécessaire.</p>
+    <p class="muted small about">Lingua · aucune donnée ne quitte ton appareil.</p>
   `);
 
   app.querySelector('#settings').addEventListener('change', (e) => {
     const f = e.currentTarget;
-    s.direction = f.direction.value;
+    s.mode = f.mode.value;
     s.newPerDay = Math.max(0, Math.min(100, parseInt(f.newPerDay.value, 10) || 0));
-    s.typing = f.typing.checked;
     s.autoSpeak = f.autoSpeak.checked;
     toast(save() ? 'Réglages enregistrés' : 'Impossible d’enregistrer sur cet appareil');
   });
@@ -589,7 +963,7 @@ function viewSettings() {
     if (!file) return;
     try {
       importJson(await file.text());
-      toast('Sauvegarde importée ✔');
+      toast('Sauvegarde importée');
       viewSettings();
     } catch (err) {
       toast(`Import impossible : ${err.message}`);
@@ -607,12 +981,18 @@ function viewSettings() {
 // ---------- Routeur ----------
 
 async function route() {
-  const [, view, a, b] = (location.hash || '#/').split('/');
+  cleanup?.();
+  cleanup = null;
+  const [path, query = ''] = (location.hash || '#/').split('?');
+  const [, view, a, b] = path.split('/');
+  const params = new URLSearchParams(query);
   try {
     if (view === 'lang') await viewLanguage(a);
-    else if (view === 'review') await viewReview(a, b || 'all');
+    else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined });
+    else if (view === 'quiz') await viewSession(a, b || 'all', { quiz: true });
     else if (view === 'browse') await viewBrowse(a, b);
     else if (view === 'stats') await viewStats();
+    else if (view === 'method') viewMethod();
     else if (view === 'settings') viewSettings();
     else await viewHome();
   } catch (err) {

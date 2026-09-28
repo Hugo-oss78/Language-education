@@ -1,13 +1,13 @@
 {
-  "name": "Lingua – Réviser les langues",
+  "name": "Lingua – Apprendre les langues",
   "short_name": "Lingua",
-  "description": "Apprendre et réviser des langues avec la répétition espacée.",
+  "description": "Apprendre l’anglais, l’espagnol, l’indonésien, le népalais et l’arabe.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#122027",
-  "theme_color": "#122027",
+  "background_color": "#0e1a20",
+  "theme_color": "#0e1a20",
   "icons": [
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },

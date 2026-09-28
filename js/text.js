@@ -5,9 +5,11 @@ export function normalize(text) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '') // accents
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '') // voyelles brèves et tatweel arabes
+    .replace(/[ʿʾ]/g, '') // signes de translittération de l'arabe
     .replace(/[’‘`]/g, "'")
     .replace(/\([^)]*\)/g, ' ') // précisions entre parenthèses
-    .replace(/[.,!?;:"«»]/g, ' ')
+    .replace(/[.,!?;:"«»¿¡؟،।…-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^(?:(?:to|the|a|an|le|la|les|un|une|se)\s+|l'|s')/, '');
@@ -22,6 +24,33 @@ export function checkAnswer(input, answer) {
   const given = normalize(input);
   if (!given) return false;
   return alternatives(answer).some((alt) => normalize(alt) === given);
+}
+
+// Distance d'édition (Damerau, variante OSA) : une inversion de deux lettres compte pour 1.
+export function levenshtein(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+// Évalue une réponse écrite : 'exact', 'close' (petite faute de frappe) ou 'wrong'.
+// Plusieurs réponses de référence possibles (ex. le mot et sa translittération).
+export function gradeTyped(input, ...answers) {
+  const given = normalize(input);
+  if (!given) return 'wrong';
+  const refs = answers.filter(Boolean).flatMap(alternatives).map(normalize).filter(Boolean);
+  if (refs.includes(given)) return 'exact';
+  const tolerance = (len) => (len >= 8 ? 2 : len >= 4 ? 1 : 0);
+  const compact = (t) => t.replace(/[\s']/g, '');
+  if (refs.some((r) => compact(r) === compact(given))) return 'close';
+  return refs.some((r) => levenshtein(r, given) <= tolerance(r.length)) ? 'close' : 'wrong';
 }
 
 // Lecture CSV minimale : gère les guillemets et détecte le séparateur (; , ou tabulation).
