@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KINDS, clozeOf, choicesFor, pickExercise, shuffle, bare } from '../js/exercises.js';
+import { KINDS, clozeOf, choicesFor, pickExercise, shuffle, bare, orderTiles, tokens } from '../js/exercises.js';
 import { gradeTyped, normalize, levenshtein } from '../js/text.js';
 
 const seq = (...values) => { let i = 0; return () => values[i++ % values.length]; };
@@ -67,4 +67,32 @@ test('réponses écrites : exact, presque, faux', () => {
   assert.equal(gradeTyped('', 'x'), 'wrong');
   assert.equal(normalize('as-salāmu ʿalaykum'), 'as salamu alaykum');
   assert.equal(levenshtein('kitten', 'sitting'), 3);
+});
+
+test('remettre dans l’ordre : mêmes mots, jamais déjà dans l’ordre, intrus en option', () => {
+  const card = { id: 'a', sentence: true, term: 'Saya mau pergi ke pantai.' };
+  const other = { id: 'b', sentence: true, term: 'Kopi ini terlalu manis.' };
+  for (let k = 0; k < 20; k++) {
+    const { answer, tiles } = orderTiles(card, [card, other]);
+    assert.deepEqual(answer, tokens(card.term));
+    assert.deepEqual([...tiles].sort(), [...answer].sort());
+    assert.notEqual(tiles.join(' '), answer.join(' '));
+  }
+  const withExtra = orderTiles(card, [card, other], Math.random, 2);
+  assert.equal(withExtra.tiles.length, answer_len(card) + 2);
+  function answer_len(c) { return tokens(c.term).length; }
+});
+
+test('exercices adaptés aux lettres et aux phrases', () => {
+  const letter = { term: 'क', translit: 'ka', script: true };
+  assert.equal(pickExercise({ reps: 0 }, letter), KINDS.MCQ_MEANING);
+  const letterKinds = new Set([0, 0.4, 0.8].map((r) => pickExercise({ reps: 4 }, letter, { rand: () => r, canListen: true })));
+  assert.ok(![...letterKinds].some((k) => k === KINDS.LISTEN || k === KINDS.SPEAK), 'pas d’audio pour une lettre isolée');
+  const sentence = { term: 'I usually get up early.', sentence: true };
+  const early = new Set([0, 0.9].map((r) => pickExercise({ reps: 0 }, sentence, { rand: () => r })));
+  assert.ok(early.has(KINDS.ORDER));
+  const late = new Set([0, 0.3, 0.6, 0.9].map((r) => pickExercise({ reps: 5 }, sentence, { rand: () => r, canListen: true })));
+  assert.ok(late.has(KINDS.SPEAK) && late.has(KINDS.TYPE), 'production écrite et orale ensuite');
+  const noVoice = [0, 0.3, 0.6, 0.9].map((r) => pickExercise({ reps: 5 }, sentence, { rand: () => r, canListen: false }));
+  assert.ok(!noVoice.includes(KINDS.SPEAK) && !noVoice.includes(KINDS.LISTEN), 'rien d’oral sans voix');
 });

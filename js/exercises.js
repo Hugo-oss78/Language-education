@@ -15,6 +15,8 @@ export const KINDS = Object.freeze({
   CLOZE_TYPE: 'cloze-type', // phrase à trous, à écrire
   TYPE: 'type', // français → écrire le mot étranger
   LISTEN: 'listen', // écouter → choisir le sens
+  ORDER: 'order', // remettre les mots d'une phrase dans l'ordre
+  SPEAK: 'speak', // écouter puis répéter à voix haute
 });
 
 export const KIND_LABELS = {
@@ -25,6 +27,8 @@ export const KIND_LABELS = {
   [KINDS.CLOZE_TYPE]: 'Complète la phrase',
   [KINDS.TYPE]: 'Écris la traduction',
   [KINDS.LISTEN]: 'Écoute',
+  [KINDS.ORDER]: 'Remets dans l’ordre',
+  [KINDS.SPEAK]: 'À toi de le dire',
 };
 
 export function shuffle(list, rand = Math.random) {
@@ -88,10 +92,45 @@ export function choicesFor(card, pool, field, rand = Math.random, n = 4, correct
   return shuffle([right, ...picks], rand);
 }
 
-// Choisit l'exercice selon le niveau de maîtrise de la carte (nombre de réussites d'affilée).
+// Découpe une phrase en mots (la ponctuation reste collée au mot).
+export function tokens(sentence) {
+  return String(sentence).trim().split(/\s+/).filter(Boolean);
+}
+
+// Étiquettes à remettre dans l'ordre : les mots de la phrase, mélangés,
+// plus quelques intrus pris dans d'autres phrases quand la carte est déjà bien connue.
+export function orderTiles(card, pool, rand = Math.random, extra = 0) {
+  const answer = tokens(card.term);
+  const words = new Set(answer.map(normalize));
+  const intruders = shuffle(pool.filter((c) => c.id !== card.id && c.sentence).flatMap((c) => tokens(c.term)), rand)
+    .filter((w) => !words.has(normalize(w)) && words.add(normalize(w)))
+    .slice(0, extra);
+  let tiles = shuffle([...answer, ...intruders], rand);
+  // Évite de proposer la phrase déjà dans le bon ordre.
+  if (tiles.length > 1 && tiles.join(' ') === answer.join(' ')) tiles = [...tiles.slice(1), tiles[0]];
+  return { answer, tiles };
+}
+
+// Choisit l'exercice selon le type de carte et son niveau de maîtrise (réussites d'affilée).
 export function pickExercise(state, card, { rand = Math.random, canListen = false, mode = 'auto' } = {}) {
   if (mode === 'flash') return KINDS.FLASH;
   const reps = state?.reps || 0;
+  const pick = (pool) => pool[Math.floor(rand() * pool.length)];
+
+  // Lettres d'un alphabet : reconnaître la lettre, puis la retrouver, puis écrire le son.
+  if (card.script) {
+    if (reps === 0) return KINDS.MCQ_MEANING;
+    if (reps === 1) return pick([KINDS.MCQ_TERM, KINDS.MCQ_MEANING]);
+    return pick([KINDS.TYPE, KINDS.MCQ_TERM, KINDS.MCQ_MEANING]);
+  }
+
+  // Phrases : comprendre, puis construire, puis produire (écrire ou dire).
+  if (card.sentence) {
+    const typable = card.term.length <= 40 && !card.translit;
+    if (reps === 0) return pick([KINDS.MCQ_MEANING, KINDS.ORDER]);
+    if (reps === 1) return pick([KINDS.ORDER, canListen ? KINDS.LISTEN : KINDS.ORDER]);
+    return pick([KINDS.ORDER, typable ? KINDS.TYPE : KINDS.ORDER, canListen ? KINDS.SPEAK : KINDS.ORDER, canListen ? KINDS.LISTEN : KINDS.MCQ_TERM]);
+  }
   const hasCloze = !!clozeOf(card);
   const long = card.term.length > 32; // longues phrases : l'écriture exacte devient frustrante
 
@@ -99,15 +138,17 @@ export function pickExercise(state, card, { rand = Math.random, canListen = fals
   if (reps === 0) pool = [KINDS.MCQ_MEANING, KINDS.MCQ_TERM];
   else if (reps === 1) pool = [KINDS.MCQ_TERM, hasCloze ? KINDS.CLOZE_MCQ : KINDS.MCQ_MEANING, canListen ? KINDS.LISTEN : KINDS.MCQ_MEANING];
   else if (reps === 2) pool = [hasCloze ? KINDS.CLOZE_TYPE : KINDS.TYPE, KINDS.TYPE, hasCloze ? KINDS.CLOZE_MCQ : KINDS.MCQ_TERM];
-  else pool = [KINDS.TYPE, hasCloze ? KINDS.CLOZE_TYPE : KINDS.TYPE, canListen ? KINDS.LISTEN : KINDS.MCQ_TERM, KINDS.FLASH];
+  else pool = [KINDS.TYPE, hasCloze ? KINDS.CLOZE_TYPE : KINDS.TYPE, canListen ? KINDS.LISTEN : KINDS.MCQ_TERM, canListen ? KINDS.SPEAK : KINDS.FLASH];
 
   if (long) pool = pool.map((k) => (k === KINDS.TYPE || k === KINDS.CLOZE_TYPE ? KINDS.CLOZE_MCQ : k));
   if (!hasCloze) pool = pool.map((k) => (k === KINDS.CLOZE_MCQ || k === KINDS.CLOZE_TYPE ? KINDS.MCQ_TERM : k));
-  return pool[Math.floor(rand() * pool.length)];
+  return pick(pool);
 }
 
 // Pour les quiz : un mélange de tous les formats, sans dépendre de la progression.
 export function pickQuizExercise(card, { rand = Math.random, canListen = false } = {}) {
+  if (card.script) return rand() < 0.5 ? KINDS.MCQ_MEANING : KINDS.MCQ_TERM;
+  if (card.sentence) return rand() < 0.6 ? KINDS.ORDER : KINDS.MCQ_MEANING;
   const pool = [KINDS.MCQ_MEANING, KINDS.MCQ_TERM, KINDS.TYPE];
   if (clozeOf(card)) pool.push(KINDS.CLOZE_MCQ, KINDS.CLOZE_TYPE);
   if (canListen) pool.push(KINDS.LISTEN);
