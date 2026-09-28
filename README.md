@@ -18,6 +18,13 @@ anglais, espagnol, indonésien, népalais et arabe.
 Chaque langue a aussi 3 **dialogues** (audio, traduction, questions de compréhension)
 et un paquet **« Construire des phrases »** avec sa fiche de grammaire.
 
+## Parcours
+
+Chaque langue a un **parcours** en unités courtes : l’alphabet (népalais, arabe), puis A1 → B2.
+Une unité regroupe 2 ou 3 thèmes et se termine par un **dialogue** qui sert d’étape de validation.
+Un thème est validé quand chaque carte a été réussie au moins une fois ; un dialogue, avec au moins 2 bonnes réponses sur 3.
+L’étape suivante est mise en avant, mais toutes restent ouvertes ; chaque unité a son quiz.
+
 ## Exercices
 
 La séance du jour mélange révisions et nouveaux mots. Chaque mot suit une **difficulté progressive** :
@@ -94,6 +101,7 @@ index.html            page unique
 css/style.css         styles (thème sombre, verre, lueurs)
 js/app.js             interface, séances, statistiques
 js/exercises.js       choix et construction des exercices
+js/path.js            découpage du parcours en unités et étapes
 js/srs.js             répétition espacée
 js/text.js            correction des réponses, lecture CSV
 js/storage.js         sauvegarde locale

@@ -564,3 +564,59 @@ button.chip-btn[aria-pressed="true"] { color: var(--gold); box-shadow: inset 0 0
 .dia-score { padding: 18px; text-align: center; display: grid; justify-items: center; gap: 6px; }
 .dia-score p { margin: 0; }
 .settings .row.switch small { display: block; font-size: 0.8rem; margin-top: 2px; }
+
+/* ---------- Parcours ---------- */
+.path-card { padding: 16px; margin: 14px 0 0; display: grid; gap: 10px; }
+.path-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.path-card .progress > span { background: linear-gradient(90deg, var(--gold-deep), var(--gold)); box-shadow: 0 0 12px rgb(244 199 107 / 55%); }
+.path-next { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; padding: 10px; margin: 0 -4px; border-radius: 16px; background: rgb(255 255 255 / 4%); }
+.path-next:hover { background: rgb(255 255 255 / 7%); }
+.path-next strong { font-family: var(--serif); font-size: 1.15rem; }
+.path-next .hero-go { width: 40px; height: 40px; }
+.path-all { justify-self: end; display: inline-flex; align-items: center; gap: 4px; font-size: 0.88rem; color: var(--muted); text-decoration: none; }
+.path-all:hover { color: var(--gold); }
+.path-all .ico { width: 16px; height: 16px; }
+
+.unit { margin: 26px 0 8px; }
+.unit-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.unit-title { display: flex; flex-direction: column; flex: 1; line-height: 1.25; }
+.unit-title strong { font-family: var(--serif); font-size: 1.2rem; }
+.unit-quiz { margin: 6px auto 0; max-width: 260px; }
+
+/* Sentier : les étapes serpentent de part et d'autre d'un fil central. */
+.trail { list-style: none; margin: 0; padding: 8px 0; position: relative; display: grid; gap: 6px; }
+.trail::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg, var(--wave) 0 6px, transparent 6px 12px);
+}
+.stop { position: relative; display: flex; }
+.stop.left { justify-content: flex-start; padding-right: 50%; }
+.stop.right { justify-content: flex-end; padding-left: 50%; }
+.stop-link { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; padding: 6px; border-radius: 18px; width: 100%; }
+.stop.right .stop-link { flex-direction: row-reverse; text-align: right; }
+.stop-link:hover { background: rgb(255 255 255 / 4%); }
+.stop-node { position: relative; width: 58px; height: 58px; flex-shrink: 0; display: grid; place-items: center; }
+.ring-progress {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(var(--hue) calc(var(--p) * 1%), rgb(255 255 255 / 8%) 0);
+  -webkit-mask: radial-gradient(circle, transparent 24px, #000 25px);
+  mask: radial-gradient(circle, transparent 24px, #000 25px);
+}
+.stop-node .orb { width: 44px; height: 44px; border-radius: 50%; --hue: var(--hue); }
+.stop-text { display: flex; flex-direction: column; min-width: 0; }
+.stop-text strong { font-family: var(--serif); font-size: 1rem; line-height: 1.2; }
+.stop.todo .stop-node .orb { filter: grayscale(0.6); opacity: 0.6; }
+.stop.todo .stop-text { opacity: 0.7; }
+.stop.done .stop-node .orb { background: radial-gradient(circle at 35% 30%, #fbe0a4, var(--gold) 55%, var(--gold-deep)); color: var(--on-gold); box-shadow: 0 0 16px rgb(244 199 107 / 40%); }
+.stop.done .stop-node .orb .ico { filter: none; stroke-width: 2.4; }
+.stop.done .ring-progress { background: var(--gold); }
+.stop.current .stop-node { animation: glowpulse 2.2s ease-in-out infinite alternate; border-radius: 50%; }
+@keyframes glowpulse { from { box-shadow: 0 0 0 0 rgb(244 199 107 / 0%); } to { box-shadow: 0 0 0 6px rgb(244 199 107 / 12%), 0 0 26px rgb(244 199 107 / 45%); } }
+.go-badge { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 0.8rem; font-weight: 500; color: var(--on-gold); background: linear-gradient(180deg, #f8d489, var(--gold-deep)); border-radius: 99px; padding: 3px 10px; }
+.stop.right .go-badge { align-self: flex-end; }
+.go-badge .ico { width: 14px; height: 14px; }
+
+.step-done { padding: 16px; margin-top: 12px; display: grid; gap: 8px; justify-items: center; width: 100%; max-width: 420px; }
+.step-done strong { font-family: var(--serif); font-size: 1.2rem; }
+.step-done .kicker { display: inline-flex; align-items: center; gap: 6px; }
+.step-done .progress { width: 100%; }

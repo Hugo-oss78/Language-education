@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v5';
+const VERSION = 'lingua-v6';
 const FILES = [
   './',
   'index.html',
@@ -11,6 +11,7 @@ const FILES = [
   'js/storage.js',
   'js/exercises.js',
   'js/icons.js',
+  'js/path.js',
   'data/languages.js',
   'data/en.js',
   'data/es.js',

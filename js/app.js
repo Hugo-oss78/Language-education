@@ -6,14 +6,15 @@ import {
 } from './exercises.js';
 import { icon, flag } from './icons.js';
 import {
+  LEVELS, LEVEL_NAMES, DIALOGUE_PASS, buildPath, stepStatus, nextStep, pathProgress, stepAfter,
+} from './path.js';
+import {
   store, save, logReview, newCardsToday, streak, today, accuracy,
   exportJson, importJson, resetAll,
 } from './storage.js';
 
 const app = document.getElementById('app');
 const langCache = {};
-const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
-const LEVEL_NAMES = { A1: 'Découverte', A2: 'Survie', B1: 'Seuil', B2: 'Avancé', C1: 'Autonome' };
 const DEFAULT_HUE = '#e3b35a';
 
 // ---------- Données ----------
@@ -53,18 +54,40 @@ function stateOf(card) {
 }
 
 function counts(cards, now = Date.now()) {
-  let due = 0, fresh = 0, mature = 0;
+  let due = 0, fresh = 0, mature = 0, learned = 0;
   for (const c of cards) {
     const s = stateOf(c);
     if (isNew(s)) fresh++;
     else if (isDue(s, now)) due++;
     if (isMature(s)) mature++;
+    // « Apprise » : réussie au moins une fois (même si elle a été oubliée depuis).
+    if (!isNew(s) && (s.reps >= 1 || s.lapses > 0)) learned++;
   }
-  return { due, fresh, mature, total: cards.length, seen: cards.length - fresh };
+  return { due, fresh, mature, learned, total: cards.length, seen: cards.length - fresh };
 }
 
 function newLeftToday(code) {
   return Math.max(0, store.settings.newPerDay - newCardsToday(code));
+}
+
+// ---------- Parcours ----------
+
+async function loadPath(code) {
+  const { decks, dialogues } = await loadLanguage(code);
+  const units = buildPath(decks, dialogues);
+  const deckById = Object.fromEntries(decks.map((d) => [d.id, d]));
+  const dialogueById = Object.fromEntries(dialogues.map((d) => [d.id, d]));
+  const statusOf = (step) => (step.type === 'dialogue'
+    ? stepStatus(step, { dialogueBest: store.dialogues[`${code}:${step.id}`]?.best })
+    : stepStatus(step, { deckCounts: counts(deckById[step.id].cards) }));
+  const info = (step) => (step.type === 'dialogue'
+    ? { title: dialogueById[step.id].title, icon: dialogueById[step.id].icon, hue: dialogueById[step.id].hue, kind: 'Dialogue' }
+    : { title: deckById[step.id].title, icon: deckById[step.id].icon, hue: deckById[step.id].hue, kind: deckById[step.id].type === 'script' ? 'Alphabet' : deckById[step.id].type === 'sentences' ? 'Phrases' : 'Vocabulaire' });
+  return { units, statusOf, info, deckById, dialogueById };
+}
+
+function stepHref(code, step) {
+  return step.type === 'dialogue' ? `#/dialogue/${code}/${step.id}` : `#/session/${code}/${step.id}?learn=1`;
 }
 
 // ---------- Affichage ----------
@@ -332,6 +355,9 @@ async function viewLanguage(code) {
   const { decks, dialogues } = await loadLanguage(code);
   const all = counts(decks.flatMap((d) => d.cards));
   const newToday = Math.min(newLeftToday(code), all.fresh);
+  const path = await loadPath(code);
+  const upNext = nextStep(path.units, path.statusOf);
+  const prog = pathProgress(path.units, path.statusOf);
   const scriptDecks = decks.filter((d) => d.type === 'script');
   const byLevel = LEVELS
     .map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv && d.type !== 'script') }))
@@ -374,6 +400,23 @@ async function viewLanguage(code) {
       </span>
       ${icon('arrow')}
     </a>
+    <section class="path-card glass" style="--rim:var(--gold)">
+      <div class="path-card-head">
+        <span class="kicker">Mon parcours</span>
+        <span class="muted small">${prog.done}/${prog.total} étapes</span>
+      </div>
+      ${progressBar(pct(prog.done, prog.total), 'Progression du parcours')}
+      ${upNext ? `
+        <a class="path-next" href="${stepHref(code, upNext.step)}" style="--hue:${path.info(upNext.step).hue}">
+          <span class="orb">${icon(path.info(upNext.step).icon)}</span>
+          <span class="hero-body">
+            <span class="muted small">Unité ${upNext.unit.number} · ${esc(upNext.unit.title)}</span>
+            <strong>${esc(path.info(upNext.step).title)}</strong>
+          </span>
+          <span class="hero-go">${icon('arrow')}</span>
+        </a>` : `<p class="saved">${icon('trophy')} Parcours terminé ! Continue les révisions pour tout garder en mémoire.</p>`}
+      <a class="path-all" href="#/path/${code}">Voir tout le parcours ${icon('arrow')}</a>
+    </section>
     <div class="quick-row">
       <a class="chip-btn glass" href="#/quiz/${code}/all">${icon('target')} Quiz éclair</a>
       <a class="chip-btn glass" href="#/session/${code}/all?mode=flash">${icon('cards')} Cartes seules</a>
@@ -434,6 +477,69 @@ async function viewLanguage(code) {
     toast(`${cards.length} cartes ajoutées`);
     viewLanguage(code);
   });
+}
+
+// ---------- Vue du parcours ----------
+
+async function viewPath(code) {
+  setActiveTab('home');
+  const lang = getLanguage(code);
+  if (!lang) return go('#/');
+  setTheme(lang.hue);
+  const { units, statusOf, info, deckById } = await loadPath(code);
+  const upNext = nextStep(units, statusOf);
+  const prog = pathProgress(units, statusOf);
+  let n = 0;
+
+  render(`
+    ${banner(interleave([code], [{ icon: 'compass', hue: '#f4c76b' }, { icon: 'star', hue: '#f4c76b' }, { icon: 'trophy', hue: '#f4c76b' }]), { compact: true })}
+    ${pageHead({
+      back: { href: `#/lang/${code}`, label: lang.name },
+      eyebrow: 'Mon parcours',
+      mark: flag(code),
+      title: lang.name,
+      lede: `<b class="glow">${prog.done}</b> étapes validées sur ${prog.total}`,
+    })}
+    <p class="muted small">Chaque thème est validé quand toutes ses cartes ont été apprises ; chaque dialogue, avec au moins 2 bonnes réponses sur 3.
+    Les étapes restent ouvertes : tu peux avancer dans l’ordre ou piocher.</p>
+    ${units.map((u) => {
+      const doneCount = u.steps.filter((s) => statusOf(s).done).length;
+      const unitDecks = u.steps.filter((s) => s.type === 'deck').map((s) => s.id);
+      return `
+      <section class="unit">
+        <header class="unit-head">
+          <span class="level">${u.id === 'alphabet' ? 'ABC' : u.level}</span>
+          <span class="unit-title"><span class="muted small">Unité ${u.number}</span><strong>${esc(u.title)}</strong></span>
+          <span class="muted small">${doneCount}/${u.steps.length}</span>
+        </header>
+        <ol class="trail">
+          ${u.steps.map((step) => {
+            const st = statusOf(step);
+            const inf = info(step);
+            const current = upNext && upNext.step === step;
+            const side = n++ % 2 ? 'right' : 'left';
+            const state = st.done ? 'done' : current ? 'current' : st.progress > 0 ? 'started' : 'todo';
+            return `
+            <li class="stop ${state} ${side}" style="--hue:${inf.hue};--p:${Math.round(st.progress * 100)}">
+              <a href="${stepHref(code, step)}" class="stop-link">
+                <span class="stop-node">
+                  <span class="ring-progress"></span>
+                  <span class="orb">${icon(st.done ? (st.mastered ? 'star' : 'check') : inf.icon)}</span>
+                </span>
+                <span class="stop-text">
+                  <span class="muted small">${inf.kind}${step.type === 'deck' ? ` · ${plural(deckById[step.id].cards.length, 'carte')}` : ''}</span>
+                  <strong>${esc(inf.title)}</strong>
+                  ${current ? `<span class="go-badge">${st.progress > 0 ? 'Continuer' : 'Commencer'} ${icon('arrow')}</span>` : ''}
+                </span>
+              </a>
+            </li>`;
+          }).join('')}
+        </ol>
+        ${unitDecks.length > 1 ? `<a class="chip-btn glass unit-quiz" href="#/quiz/${code}/${unitDecks.join('+')}">${icon('target')} Quiz de l’unité ${u.number}</a>` : ''}
+      </section>`;
+    }).join('')}
+  `);
+  app.querySelector('.stop.current')?.scrollIntoView({ block: 'center' });
 }
 
 // ---------- Liste des mots ----------
@@ -499,12 +605,13 @@ async function viewBrowse(code, deckId) {
 
 // ---------- Séance (révisions, nouveaux mots, quiz) ----------
 
-function buildQueue(cards, code, deckOnly, opts) {
+function buildQueue(cards, code, deckOnly, opts, learn = false) {
   const now = Date.now();
   // Révisions dues, mélangées : alterner les thèmes aide à mieux retenir.
   const due = shuffle(cards.filter((c) => isDue(stateOf(c), now)));
   // Nouveautés dans l'ordre du parcours, en alternant alphabet et vocabulaire.
-  const limit = newLeftToday(code);
+  // Depuis le parcours, on peut toujours découvrir quelques cartes de l'étape, même quota atteint.
+  const limit = learn ? Math.max(newLeftToday(code), 8) : newLeftToday(code);
   const letters = cards.filter((c) => c.script && isNew(stateOf(c)));
   const others = cards.filter((c) => !c.script && isNew(stateOf(c)));
   const fresh = [];
@@ -529,12 +636,13 @@ function buildQuiz(cards, opts) {
   return shuffle(pool).slice(0, 10).map((card) => ({ card, kind: pickQuizExercise(card, opts) }));
 }
 
-async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
+async function viewSession(code, deckId = 'all', { quiz = false, mode, learn = false } = {}) {
   setActiveTab('home');
   const lang = getLanguage(code);
   if (!lang) return go('#/');
   const { decks } = await loadLanguage(code);
-  const scope = deckId === 'all' ? decks : decks.filter((d) => d.id === deckId);
+  const wanted = deckId.split('+');
+  const scope = deckId === 'all' ? decks : decks.filter((d) => wanted.includes(d.id));
   if (!scope.length) return go(`#/lang/${code}`);
   store.settings.lastLang = code;
   save();
@@ -546,9 +654,13 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   const poolFor = (card) => pool.filter((c) => c.script === card.script && c.sentence === card.sentence);
   const opts = { canListen: canSpeak(code), mode: mode || store.settings.mode };
   const cards = scope.flatMap((d) => d.cards);
-  const queue = quiz ? buildQuiz(cards, opts) : buildQueue(cards, code, deckId !== 'all', opts);
+  const queue = quiz ? buildQuiz(cards, opts) : buildQueue(cards, code, deckId !== 'all', opts, learn);
+  // Étape du parcours concernée (séance sur un seul thème) : on note son état avant la séance.
+  const path = !quiz && scope.length === 1 && deckId !== 'all' ? await loadPath(code) : null;
+  const pathStep = path ? { type: 'deck', id: scope[0].id } : null;
+  const wasDone = pathStep ? path.statusOf(pathStep).done : false;
   const back = `#/lang/${code}`;
-  const title = quiz ? 'Quiz éclair' : deckId === 'all' ? 'Séance du jour' : scope[0].title;
+  const title = quiz ? (scope.length > 1 && deckId !== 'all' ? 'Quiz de l’unité' : 'Quiz éclair') : deckId === 'all' ? 'Séance du jour' : scope[0].title;
   const total = new Set(queue.map((q) => q.card.id)).size;
   const tally = { right: 0, wrong: 0, fresh: 0 };
   const finished = new Set();
@@ -935,6 +1047,29 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
     setTheme(lang.hue);
     const answered = tally.right + tally.wrong;
     const score = answered ? pct(tally.right, answered) : 100;
+    // Parcours : étape validée → on propose la suivante ; sinon on montre où en est l'étape.
+    let pathHtml = '';
+    if (pathStep) {
+      const now = path.statusOf(pathStep);
+      const after = stepAfter(path.units, pathStep);
+      const c = counts(scope[0].cards);
+      if (now.done && !wasDone) {
+        pathHtml = `
+          <div class="step-done glass" style="--rim:var(--gold)">
+            <p class="kicker">${icon('check')} Étape validée</p>
+            <strong>${esc(scope[0].title)}</strong>
+            ${after ? `<a class="btn primary" href="${stepHref(code, after.step)}">Étape suivante : ${esc(path.info(after.step).title)} ${icon('arrow')}</a>` : '<p class="muted">Tu as terminé tout le parcours !</p>'}
+          </div>`;
+      } else if (!now.done) {
+        pathHtml = `
+          <div class="step-done glass">
+            <p class="muted small">Étape « ${esc(scope[0].title)} »</p>
+            ${progressBar(pct(c.learned, c.total), 'Cartes apprises dans cette étape')}
+            <p class="muted small">${c.learned}/${c.total} cartes apprises (réussies au moins une fois)</p>
+            <a class="btn" href="${stepHref(code, pathStep)}">Continuer l’étape</a>
+          </div>`;
+      }
+    }
     render(`
       ${banner(interleave([code], [{ icon: 'trophy', hue: '#f4c76b' }, { icon: 'star', hue: '#f4c76b' }, { icon: 'flame', hue: '#f09a6a' }]))}
       <section class="empty">
@@ -942,8 +1077,9 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
         <p class="score glow-gold">${score}<small>%</small></p>
         <p class="muted">${plural(tally.right, 'bonne réponse', 'bonnes réponses')} sur ${answered}${tally.fresh ? ` · ${plural(tally.fresh, 'nouveau mot', 'nouveaux mots')}` : ''}</p>
         <p class="saved">${icon('flame')} ${plural(streak(), 'jour')} d’affilée</p>
+        ${pathHtml}
         <div class="btn-row center">
-          <a class="btn primary" href="${back}">Continuer</a>
+          <a class="btn ${pathHtml ? '' : 'primary'}" href="${back}">${pathHtml ? 'Retour' : 'Continuer'}</a>
           <a class="btn" href="#/quiz/${code}/${deckId}">${icon('target')} ${quiz ? 'Rejouer' : 'Quiz éclair'}</a>
         </div>
       </section>`);
@@ -1015,18 +1151,25 @@ async function viewDialogue(code, id) {
   const quizEl = $id('dia-quiz');
   let qi = 0;
   let right = 0;
-  const ask = () => {
+  const ask = async () => {
     if (qi >= d.questions.length) {
       const score = pct(right, d.questions.length);
       const key = `${code}:${d.id}`;
       const prev = store.dialogues[key]?.best || 0;
       store.dialogues[key] = { best: Math.max(prev, score), at: today() };
       save();
+      const path = await loadPath(code);
+      const step = { type: 'dialogue', id: d.id };
+      const after = path.statusOf(step).done ? stepAfter(path.units, step) : null;
       quizEl.innerHTML = `
         <div class="glass dia-score" style="--rim:var(--gold)">
           <p class="score glow-gold">${score}<small>%</small></p>
           <p class="muted">${plural(right, 'bonne réponse', 'bonnes réponses')} sur ${d.questions.length}</p>
-          <button type="button" class="btn" id="dia-again">Recommencer</button>
+          ${score >= DIALOGUE_PASS ? `<p class="saved">${icon('check')} Étape validée</p>` : `<p class="muted small">Il faut ${DIALOGUE_PASS} % pour valider l’étape : réécoute le dialogue et retente !</p>`}
+          <div class="btn-row center">
+            <button type="button" class="btn" id="dia-again">Recommencer</button>
+            ${after ? `<a class="btn primary" href="${stepHref(code, after.step)}">Étape suivante ${icon('arrow')}</a>` : ''}
+          </div>
         </div>`;
       $id('dia-again').addEventListener('click', () => { qi = 0; right = 0; ask(); });
       return;
@@ -1284,7 +1427,8 @@ async function route() {
   const params = new URLSearchParams(query);
   try {
     if (view === 'lang') await viewLanguage(a);
-    else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined });
+    else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined, learn: params.has('learn') });
+    else if (view === 'path') await viewPath(a);
     else if (view === 'quiz') await viewSession(a, b || 'all', { quiz: true });
     else if (view === 'browse') await viewBrowse(a, b);
     else if (view === 'dialogue') await viewDialogue(a, b);
