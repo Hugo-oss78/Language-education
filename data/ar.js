@@ -3,9 +3,81 @@
 // (darija, égyptien, levantin…) : les différences sont signalées quand elles sont fortes.
 // Écriture sans voyelles brèves, comme dans la presse ; la translittération aide à prononcer.
 // ⚠️ Contenu à faire relire par un locuteur natif.
+
+// Alphabet arabe : chaque carte = une lettre, avec ses formes selon la position dans le mot.
+// ا د ذ ر ز و ne s'attachent jamais à la lettre suivante.
+const NON_JOINING = 'ادذرزو';
+const L = (key, term, translit, fr, note) => {
+  const forms = NON_JOINING.includes(term)
+    ? `Formes : ${term} (seule), ـ${term} (attachée à la précédente)`
+    : `Formes : ${term} (seule) · ${term}ـ (début) · ـ${term}ـ (milieu) · ـ${term} (fin)`;
+  return { key, term, translit, fr, note: note ? `${note}. ${forms}` : forms };
+};
+const SCRIPT_TIPS = [
+  'L’arabe s’écrit et se lit de droite à gauche.',
+  'Les voyelles brèves (a, i, u) ne s’écrivent généralement pas : on les devine grâce au vocabulaire.',
+  'La plupart des lettres s’attachent entre elles et changent de forme au début, au milieu ou à la fin d’un mot.',
+  'Six lettres ne s’attachent jamais à la suivante : ا د ذ ر ز و.',
+];
+const alphabet = [
+  {
+    id: 'huruf-1',
+    type: 'script',
+    title: 'Alphabet : lettres 1 à 14',
+    icon: 'pen',
+    hue: '#f4c76b',
+    level: 'A1',
+    description: 'De alif à ṣād : les formes et les sons de base.',
+    tips: SCRIPT_TIPS,
+    cards: [
+      L('alif', 'ا', 'a', 'ā (alif)', 'Support de voyelle, ou « a » long'),
+      L('ba', 'ب', 'b', 'b (bāʾ)', 'Un point dessous'),
+      L('ta', 'ت', 't', 't (tāʾ)', 'Deux points dessus'),
+      L('tha', 'ث', 'th', 'th (thāʾ)', 'Comme le « th » anglais de « think » ; trois points dessus'),
+      L('jim', 'ج', 'j', 'j (jīm)', '« dj » dans beaucoup de régions, « j » au Maghreb'),
+      L('hha', 'ح', 'ḥ', 'ḥ (ḥāʾ, h soufflé fort)', 'Un h expiré du fond de la gorge, sans raclement'),
+      L('kha', 'خ', 'kh', 'kh (khāʾ)', 'Comme la « jota » espagnole'),
+      L('dal', 'د', 'd', 'd (dāl)'),
+      L('dhal', 'ذ', 'dh', 'dh (dhāl)', 'Comme le « th » anglais de « this »'),
+      L('ra', 'ر', 'r', 'r (rāʾ, roulé)'),
+      L('zay', 'ز', 'z', 'z (zāy)'),
+      L('sin', 'س', 's', 's (sīn)'),
+      L('shin', 'ش', 'sh', 'sh (shīn, « ch »)'),
+      L('sad', 'ص', 'ṣ', 'ṣ (ṣād, s emphatique)', 'Emphatique : langue plus basse, son plus « sombre »'),
+    ],
+  },
+  {
+    id: 'huruf-2',
+    type: 'script',
+    title: 'Alphabet : lettres 15 à 28',
+    icon: 'pen',
+    hue: '#f4c76b',
+    level: 'A1',
+    description: 'De ḍād à yāʾ : les sons de gorge et les dernières lettres.',
+    tips: SCRIPT_TIPS,
+    cards: [
+      L('dad', 'ض', 'ḍ', 'ḍ (ḍād, d emphatique)'),
+      L('tta', 'ط', 'ṭ', 'ṭ (ṭāʾ, t emphatique)'),
+      L('zza', 'ظ', 'ẓ', 'ẓ (ẓāʾ, dh emphatique)'),
+      L('ayn', 'ع', 'ʿ', 'ʿ (ʿayn, son de gorge)', 'Contraction du fond de la gorge ; n’existe pas en français'),
+      L('ghayn', 'غ', 'gh', 'gh (ghayn, « r » grasseyé)', 'Proche du « r » parisien'),
+      L('fa', 'ف', 'f', 'f (fāʾ)'),
+      L('qaf', 'ق', 'q', 'q (qāf, k profond)', 'Un « k » prononcé tout au fond de la gorge'),
+      L('kaf', 'ك', 'k', 'k (kāf)'),
+      L('lam', 'ل', 'l', 'l (lām)'),
+      L('mim', 'م', 'm', 'm (mīm)'),
+      L('nun', 'ن', 'n', 'n (nūn)'),
+      L('ha', 'ه', 'h', 'h (hāʾ, léger)', 'Un h expiré léger, comme en anglais'),
+      L('waw', 'و', 'w', 'w / ū (wāw)'),
+      L('ya', 'ي', 'y', 'y / ī (yāʾ)'),
+    ],
+  },
+];
+
 export default {
   reviewNeeded: true,
   decks: [
+    ...alphabet,
     {
       id: 'tahiyyat',
       title: 'Salutations & politesse',
@@ -185,6 +257,99 @@ export default {
         { fr: 'le père', term: 'أب', translit: 'ab' },
         { fr: 'le frère', term: 'أخ', translit: 'akh' },
         { fr: 'la sœur', term: 'أخت', translit: 'ukht' },
+      ],
+    },
+    {
+      id: 'jumal',
+      type: 'sentences',
+      title: 'Construire des phrases',
+      icon: 'quote',
+      hue: '#f4c76b',
+      level: 'A2',
+      description: 'La phrase nominale, l’accord et l’article, en phrases complètes.',
+      tips: [
+        'Au présent, pas de verbe « être » : « أنا طالب » (anā ṭālib) = je [suis] étudiant.',
+        'L’adjectif suit le nom et s’accorde : « المدينة جميلة » (al-madīna jamīla) = la ville est belle (féminin en -a).',
+        'L’article « ال » (al-) s’attache au mot ; devant certaines lettres, le « l » s’assimile : ash-shāy (le thé).',
+        'Les pronoms possessifs se collent à la fin du nom : صديقي (ṣadīqī) = mon ami.',
+      ],
+      cards: [
+        { fr: 'Je suis étudiant.', term: 'أنا طالب', translit: 'anā ṭālib' },
+        { fr: 'La maison est grande.', term: 'البيت كبير', translit: 'al-bayt kabīr' },
+        { fr: 'Je veux du café.', term: 'أريد قهوة', translit: 'urīd qahwa' },
+        { fr: 'Où est la gare ?', term: 'أين المحطة؟', translit: 'ayna al-maḥaṭṭa?' },
+        { fr: 'Je travaille à Lyon.', term: 'أعمل في ليون', translit: 'aʿmal fī liyūn' },
+        { fr: 'Le repas est délicieux.', term: 'الطعام لذيذ', translit: 'aṭ-ṭaʿām ladhīdh' },
+        { fr: 'Je ne comprends pas l’arabe.', term: 'لا أفهم العربية', translit: 'lā afham al-ʿarabiyya' },
+        { fr: 'Mon ami est égyptien.', term: 'صديقي مصري', translit: 'ṣadīqī miṣrī' },
+        { fr: 'La ville est belle.', term: 'المدينة جميلة', translit: 'al-madīna jamīla' },
+        { fr: 'Nous allons au marché.', term: 'نذهب إلى السوق', translit: 'nadhhab ilā as-sūq' },
+        { fr: 'Le thé est chaud.', term: 'الشاي ساخن', translit: 'ash-shāy sākhin' },
+        { fr: 'Combien coûte le livre ?', term: 'بكم الكتاب؟', translit: 'bikam al-kitāb?' },
+      ],
+    },
+  ],
+  dialogues: [
+    {
+      id: 'taaruf',
+      title: 'Faire connaissance',
+      level: 'A1',
+      icon: 'hand',
+      hue: '#4fb07a',
+      context: 'Léa rencontre Karim.',
+      lines: [
+        { who: 'Karim', text: 'مرحبا! ما اسمك؟', tr: 'marḥaban! mā ismuki?', fr: 'Salut ! Comment tu t’appelles ?' },
+        { who: 'Léa', text: 'اسمي ليا. وأنت؟', tr: 'ismī Lea. wa-anta?', fr: 'Je m’appelle Léa. Et toi ?' },
+        { who: 'Karim', text: 'أنا كريم. من أين أنت؟', tr: 'anā Karīm. min ayna anti?', fr: 'Je suis Karim. D’où viens-tu ?' },
+        { who: 'Léa', text: 'أنا من فرنسا.', tr: 'anā min faransā.', fr: 'Je viens de France.' },
+        { who: 'Karim', text: 'أهلا وسهلا! تشرفنا.', tr: 'ahlan wa-sahlan! tasharrafnā.', fr: 'Bienvenue ! Enchanté.' },
+      ],
+      questions: [
+        { q: 'Comment s’appelle le garçon ?', options: ['Karim', 'Léa', 'Ali'], answer: 0 },
+        { q: 'D’où vient Léa ?', options: ['de France', 'du Maroc', 'd’Égypte'], answer: 0 },
+        { q: '« تشرفنا » (tasharrafnā) veut dire…', options: ['enchanté', 'au revoir', 'merci'], answer: 0 },
+      ],
+    },
+    {
+      id: 'souq',
+      title: 'Au souk',
+      level: 'A2',
+      icon: 'bag',
+      hue: '#e3b35a',
+      context: 'Léa négocie un prix au marché.',
+      lines: [
+        { who: 'Léa', text: 'السلام عليكم. بكم هذا؟', tr: 'as-salāmu ʿalaykum. bikam hādhā?', fr: 'Bonjour. Combien coûte ceci ?' },
+        { who: 'Le vendeur', text: 'وعليكم السلام. بعشرين درهما.', tr: 'wa-ʿalaykum as-salām. bi-ʿishrīn dirhaman.', fr: 'Bonjour. Vingt dirhams.' },
+        { who: 'Léa', text: 'هذا غالي! بخمسة عشر؟', tr: 'hādhā ghālī! bi-khamsata ʿashar?', fr: 'C’est cher ! Quinze ?' },
+        { who: 'Le vendeur', text: 'حسنا، لك بسبعة عشر.', tr: 'ḥasanan, laki bi-sabʿata ʿashar.', fr: 'D’accord, pour toi ce sera dix-sept.' },
+        { who: 'Léa', text: 'شكرا جزيلا!', tr: 'shukran jazīlan!', fr: 'Merci beaucoup !' },
+        { who: 'Le vendeur', text: 'عفوا. مع السلامة.', tr: 'ʿafwan. maʿa as-salāma.', fr: 'Je vous en prie. Au revoir.' },
+      ],
+      questions: [
+        { q: 'Quel est le premier prix annoncé ?', options: ['20 dirhams', '15 dirhams', '17 dirhams'], answer: 0 },
+        { q: 'Quel est le prix final ?', options: ['17 dirhams', '20 dirhams', '15 dirhams'], answer: 0 },
+        { q: 'Que dit Léa du premier prix ?', options: ['c’est cher', 'ce n’est pas cher', 'c’est gratuit'], answer: 0 },
+      ],
+    },
+    {
+      id: 'mataam',
+      title: 'Au restaurant',
+      level: 'B1',
+      icon: 'utensils',
+      hue: '#f09a6a',
+      context: 'Le serveur s’adresse à Léa : les verbes prennent la terminaison féminine -īn.',
+      lines: [
+        { who: 'Le serveur', text: 'أهلا بك. ماذا تريدين؟', tr: 'ahlan biki. mādhā turīdīn?', fr: 'Bienvenue. Que désirez-vous ?' },
+        { who: 'Léa', text: 'أريد طبق دجاج مع أرز، من فضلك.', tr: 'urīd ṭabaq dajāj maʿa aruzz, min faḍlak.', fr: 'Je voudrais un plat de poulet avec du riz, s’il vous plaît.' },
+        { who: 'Le serveur', text: 'وماذا تشربين؟', tr: 'wa-mādhā tashrabīn?', fr: 'Et que buvez-vous ?' },
+        { who: 'Léa', text: 'شاي بالنعناع.', tr: 'shāy bi-n-naʿnāʿ.', fr: 'Un thé à la menthe.' },
+        { who: 'Le serveur', text: 'حسنا. هل تريدين شيئا آخر؟', tr: 'ḥasanan. hal turīdīn shayʾan ākhar?', fr: 'Très bien. Vous voulez autre chose ?' },
+        { who: 'Léa', text: 'لا، شكرا. الحساب من فضلك.', tr: 'lā, shukran. al-ḥisāb min faḍlak.', fr: 'Non, merci. L’addition, s’il vous plaît.' },
+      ],
+      questions: [
+        { q: 'Que commande Léa à manger ?', options: ['du poulet avec du riz', 'du poisson', 'une soupe'], answer: 0 },
+        { q: 'Que boit-elle ?', options: ['un thé à la menthe', 'un café', 'de l’eau'], answer: 0 },
+        { q: 'Que demande-t-elle à la fin ?', options: ['l’addition', 'la carte', 'le wifi'], answer: 0 },
       ],
     },
   ],

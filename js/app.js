@@ -1,7 +1,9 @@
 import { LANGUAGES, getLanguage } from '../data/languages.js';
 import { GRADES, isNew, isDue, isMature, review, previewIntervals } from './srs.js';
-import { gradeTyped, alternatives, parseCsv, rowsToCards } from './text.js';
-import { KINDS, KIND_LABELS, clozeOf, choicesFor, pickExercise, pickQuizExercise, shuffle, bare } from './exercises.js';
+import { gradeTyped, alternatives, parseCsv, rowsToCards, normalize } from './text.js';
+import {
+  KINDS, KIND_LABELS, clozeOf, choicesFor, pickExercise, pickQuizExercise, shuffle, bare, orderTiles,
+} from './exercises.js';
 import { icon, flag } from './icons.js';
 import {
   store, save, logReview, newCardsToday, streak, today, accuracy,
@@ -27,7 +29,7 @@ async function loadLanguage(code) {
     langCache[code] = mod.default;
   }
   const lang = getLanguage(code);
-  const { decks: base, reviewNeeded = false } = langCache[code];
+  const { decks: base, reviewNeeded = false, dialogues = [] } = langCache[code];
   const custom = (store.customDecks[code] || []).map((d) => ({ icon: 'pen', level: 'B1', ...d, custom: true }));
   const decks = [...base, ...custom]
     .map((deck, order) => ({
@@ -36,12 +38,14 @@ async function loadLanguage(code) {
       hue: deck.hue || lang.hue,
       cards: deck.cards.map((c, i) => ({
         ...c,
-        id: `${code}:${deck.id}:${slug(c.translit || c.term) || i}`,
+        id: `${code}:${deck.id}:${c.key || slug(c.translit || c.term) || i}`,
         deckId: deck.id,
+        script: deck.type === 'script',
+        sentence: deck.type === 'sentences',
       })),
     }))
     .sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || a.order - b.order);
-  return { decks, reviewNeeded };
+  return { decks, reviewNeeded, dialogues };
 }
 
 function stateOf(card) {
@@ -181,8 +185,11 @@ function canSpeak(code) {
 }
 
 const warnedNoVoice = new Set();
-function speak(text, code) {
-  if (!('speechSynthesis' in window)) return toast('La synthèse vocale n’est pas disponible ici.');
+function speak(text, code, onend) {
+  if (!('speechSynthesis' in window)) {
+    onend?.();
+    return toast('La synthèse vocale n’est pas disponible ici.');
+  }
   const voice = voiceFor(code);
   if (!voice && !warnedNoVoice.has(code)) {
     warnedNoVoice.add(code);
@@ -194,11 +201,57 @@ function speak(text, code) {
     utter.lang = getLanguage(code)?.tts || code;
     if (voice) utter.voice = voice;
     utter.rate = 0.92;
+    if (onend) utter.onend = utter.onerror = onend;
     speechSynthesis.cancel();
     speechSynthesis.speak(utter);
   } catch (err) {
     console.warn('Synthèse vocale indisponible', err);
+    onend?.();
   }
+}
+
+// Lit une suite de phrases l'une après l'autre (chaque étape reçoit l'index en cours).
+function speakSequence(texts, code, onStep) {
+  let i = 0;
+  let stopped = false;
+  const step = () => {
+    if (stopped || i >= texts.length) return onStep?.(-1);
+    onStep?.(i);
+    // Filet de sécurité si le navigateur ne signale jamais la fin.
+    const guard = setTimeout(advance, 1500 + texts[i].length * 120);
+    function advance() { clearTimeout(guard); i++; setTimeout(step, 350); }
+    speak(texts[i], code, advance);
+  };
+  step();
+  return () => { stopped = true; try { speechSynthesis.cancel(); } catch { /* rien */ } };
+}
+
+// Reconnaissance vocale (facultative, désactivée par défaut) : selon le navigateur,
+// l'audio peut être envoyé au service de reconnaissance de Google ou d'Apple.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function canRecognize() {
+  return !!Recognition && !!store.settings.recognition;
+}
+
+function recognizeOnce(code) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    try {
+      const r = new Recognition();
+      r.lang = getLanguage(code)?.tts || code;
+      r.interimResults = false;
+      r.maxAlternatives = 3;
+      r.onresult = (e) => done([...e.results[0]].map((a) => a.transcript));
+      r.onerror = () => done(null);
+      r.onend = () => done(null);
+      r.start();
+      setTimeout(() => { try { r.stop(); } catch { /* rien */ } }, 8000);
+    } catch {
+      done(null);
+    }
+  });
 }
 
 function speakBtn(text, cls = '') {
@@ -276,10 +329,33 @@ async function viewLanguage(code) {
   const lang = getLanguage(code);
   if (!lang) return go('#/');
   setTheme(lang.hue);
-  const { decks } = await loadLanguage(code);
+  const { decks, dialogues } = await loadLanguage(code);
   const all = counts(decks.flatMap((d) => d.cards));
   const newToday = Math.min(newLeftToday(code), all.fresh);
-  const byLevel = LEVELS.map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv) })).filter((g) => g.decks.length);
+  const scriptDecks = decks.filter((d) => d.type === 'script');
+  const byLevel = LEVELS
+    .map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv && d.type !== 'script') }))
+    .filter((g) => g.decks.length);
+  const unit = (d) => (d.type === 'script' ? 'Lettres' : d.type === 'sentences' ? 'Phrases' : 'Mots');
+  const deckTile = (d) => {
+    const c = counts(d.cards);
+    return `
+      <article class="deck glass" style="--rim:${d.hue};--hue:${d.hue}">
+        <a class="deck-hit" href="#/session/${code}/${d.id}">
+          <span class="orb big">${icon(d.icon)}</span>
+          ${d.type === 'sentences' ? '<span class="tag">Phrases</span>' : ''}
+          <strong>${esc(d.title)}</strong>
+          <span class="desc">${esc(d.description || '')}</span>
+        </a>
+        ${progressBar(pct(c.seen, c.total), 'Cartes vues')}
+        <span class="meta">${c.seen}/${c.total}${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
+        <span class="deck-links">
+          <a href="#/browse/${code}/${d.id}">${icon('eye')} ${unit(d)}</a>
+          <a href="#/quiz/${code}/${d.id}">${icon('target')} Quiz</a>
+          ${d.custom ? `<button class="link" data-delete="${d.id}" aria-label="Supprimer ce paquet">${icon('x')}</button>` : ''}
+        </span>
+      </article>`;
+  };
 
   render(`
     ${banner(interleave([code], decks.slice(0, 6).map((d) => ({ icon: d.icon, hue: d.hue }))))}
@@ -302,28 +378,25 @@ async function viewLanguage(code) {
       <a class="chip-btn glass" href="#/quiz/${code}/all">${icon('target')} Quiz éclair</a>
       <a class="chip-btn glass" href="#/session/${code}/all?mode=flash">${icon('cards')} Cartes seules</a>
     </div>
+    ${scriptDecks.length ? `
+      <h2 class="section-title level-title"><span class="level">ABC</span> Alphabet</h2>
+      <section class="deck-grid">${scriptDecks.map(deckTile).join('')}</section>` : ''}
+    ${dialogues.length ? `
+      <h2 class="section-title level-title"><span class="level alt">${icon('headphones')}</span> Lire & écouter</h2>
+      <section class="dialogue-list">
+        ${dialogues.map((d) => {
+          const done = store.dialogues[`${code}:${d.id}`];
+          return `
+          <a class="dialogue-card glass" href="#/dialogue/${code}/${d.id}" style="--rim:${d.hue};--hue:${d.hue}">
+            <span class="orb">${icon(d.icon)}</span>
+            <span class="hero-body"><strong>${esc(d.title)}</strong><span class="muted small">${d.level} · ${esc(d.context)}</span></span>
+            ${done ? `<span class="badge ${done.best === 100 ? 'due' : ''}">${done.best}%</span>` : `<span class="badge">Nouveau</span>`}
+          </a>`;
+        }).join('')}
+      </section>` : ''}
     ${byLevel.map(({ lv, decks: list }) => `
       <h2 class="section-title level-title"><span class="level">${lv}</span> ${LEVEL_NAMES[lv] || ''}</h2>
-      <section class="deck-grid">
-        ${list.map((d) => {
-          const c = counts(d.cards);
-          return `
-          <article class="deck glass" style="--rim:${d.hue};--hue:${d.hue}">
-            <a class="deck-hit" href="#/session/${code}/${d.id}">
-              <span class="orb big">${icon(d.icon)}</span>
-              <strong>${esc(d.title)}</strong>
-              <span class="desc">${esc(d.description || '')}</span>
-            </a>
-            ${progressBar(pct(c.seen, c.total), 'Mots vus')}
-            <span class="meta">${c.seen}/${c.total}${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
-            <span class="deck-links">
-              <a href="#/browse/${code}/${d.id}">${icon('eye')} Mots</a>
-              <a href="#/quiz/${code}/${d.id}">${icon('target')} Quiz</a>
-              ${d.custom ? `<button class="link" data-delete="${d.id}" aria-label="Supprimer ce paquet">${icon('x')}</button>` : ''}
-            </span>
-          </article>`;
-        }).join('')}
-      </section>`).join('')}
+      <section class="deck-grid">${list.map(deckTile).join('')}</section>`).join('')}
     <details class="import glass">
       <summary>${icon('plus')} Créer mon propre paquet (CSV)</summary>
       <p class="muted small">Une ligne par carte : <code>français ; ${lang.name.toLowerCase()} ; exemple ; note</code>.
@@ -377,6 +450,14 @@ function exampleHtml(card, lang, { highlight = true } = {}) {
     </div>`;
 }
 
+function tipsHtml(deck, { compact = false } = {}) {
+  if (!deck.tips?.length) return '';
+  const list = `<ul>${deck.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+  return compact
+    ? `<details class="tips-mini"><summary>${icon('book')} Fiche : ${esc(deck.title)}</summary>${list}</details>`
+    : `<section class="tips glass" style="--rim:var(--gold)"><h2>${icon('book')} Fiche</h2>${list}</section>`;
+}
+
 async function viewBrowse(code, deckId) {
   setActiveTab('home');
   const lang = getLanguage(code);
@@ -388,11 +469,12 @@ async function viewBrowse(code, deckId) {
     ${banner(interleave([code], [{ icon: deck.icon, hue: deck.hue }]), { compact: true })}
     ${pageHead({
       back: { href: `#/lang/${code}`, label: lang.name },
-      eyebrow: `${deck.level} · ${plural(deck.cards.length, 'mot')}`,
+      eyebrow: `${deck.level} · ${plural(deck.cards.length, deck.type === 'script' ? 'lettre' : deck.type === 'sentences' ? 'phrase' : 'mot')}`,
       mark: icon(deck.icon),
       title: esc(deck.title),
       lede: esc(deck.description || ''),
     })}
+    ${tipsHtml(deck)}
     <ul class="word-list">
       ${deck.cards.map((c) => {
         const s = stateOf(c);
@@ -421,7 +503,15 @@ function buildQueue(cards, code, deckOnly, opts) {
   const now = Date.now();
   // Révisions dues, mélangées : alterner les thèmes aide à mieux retenir.
   const due = shuffle(cards.filter((c) => isDue(stateOf(c), now)));
-  const fresh = cards.filter((c) => isNew(stateOf(c))).slice(0, newLeftToday(code));
+  // Nouveautés dans l'ordre du parcours, en alternant alphabet et vocabulaire.
+  const limit = newLeftToday(code);
+  const letters = cards.filter((c) => c.script && isNew(stateOf(c)));
+  const others = cards.filter((c) => !c.script && isNew(stateOf(c)));
+  const fresh = [];
+  while (fresh.length < limit && (letters.length || others.length)) {
+    if (letters.length) fresh.push(letters.shift());
+    if (others.length && fresh.length < limit) fresh.push(others.shift());
+  }
   let queue = due.map((card) => ({ card, kind: pickExercise(stateOf(card), card, opts) }));
   // Les nouveaux mots arrivent intercalés entre les révisions.
   fresh.forEach((card, i) => queue.splice(Math.min(queue.length, i * 2 + 1), 0, { card, kind: 'intro' }));
@@ -452,6 +542,8 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   const deckOf = Object.fromEntries(decks.map((d) => [d.id, d]));
   const pool = decks.flatMap((d) => d.cards);
   const byTerm = new Map(pool.map((c) => [c.term, c]));
+  // Les intrus viennent de cartes du même type (lettres avec lettres, phrases avec phrases).
+  const poolFor = (card) => pool.filter((c) => c.script === card.script && c.sentence === card.sentence);
   const opts = { canListen: canSpeak(code), mode: mode || store.settings.mode };
   const cards = scope.flatMap((d) => d.cards);
   const queue = quiz ? buildQuiz(cards, opts) : buildQueue(cards, code, deckId !== 'all', opts);
@@ -518,12 +610,13 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   }
 
   function termBlock(card, cls = '') {
+    const showTranslit = card.translit && !(card.script && cls !== 'small');
     return `
-      <div class="term ${cls}">
+      <div class="term ${cls}${card.script ? ' is-letter' : ''}${card.sentence ? ' is-sentence' : ''}">
         <span class="term-text glow" ${langAttrs(lang)}>${esc(card.term)}</span>
-        ${speakBtn(card.term)}
+        ${card.script ? '' : speakBtn(card.term)}
       </div>
-      ${card.translit ? `<div class="translit">${esc(card.translit)}</div>` : ''}`;
+      ${showTranslit ? `<div class="translit">${esc(card.translit)}</div>` : ''}`;
   }
 
   function answerBlock(card) {
@@ -570,7 +663,7 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
     $('.exercise').append(zone);
     $('.exercise').classList.add(ok ? 'is-ok' : 'is-ko');
     bindSpeak(zone, code);
-    if (store.settings.autoSpeak && canSpeak(code)) speak(card.term, code);
+    if (store.settings.autoSpeak && canSpeak(code) && !card.script) speak(card.term, code);
     let grade = ok ? (close ? GRADES.HARD : GRADES.GOOD) : GRADES.AGAIN;
     controls(`
       ${!ok && given ? '<button type="button" class="link small center-link" id="override">J’avais raison (synonyme)</button>' : ''}
@@ -589,8 +682,9 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   function choiceButtons(options, inTarget) {
     return `<div class="choices">${options.map((o, i) => {
       const c = inTarget ? byTerm.get(o) : null;
+      const letter = c?.script;
       return `<button type="button" class="choice" data-i="${i}">
-        <kbd>${i + 1}</kbd><span ${inTarget ? langAttrs(lang) : ''}>${esc(o)}</span>${c?.translit ? `<small class="translit">${esc(c.translit)}</small>` : ''}
+        <kbd>${i + 1}</kbd><span class="${letter ? 'letter' : ''}" ${inTarget ? langAttrs(lang) : ''}>${esc(o)}</span>${c?.translit && !letter ? `<small class="translit">${esc(c.translit)}</small>` : ''}
       </button>`;
     }).join('')}</div>`;
   }
@@ -648,16 +742,18 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   const RENDERERS = {
     intro(card) {
       tally.fresh++;
-      frame(card, 'Nouveau mot', 'sparkle', `
+      const what = card.script ? 'Nouvelle lettre' : card.sentence ? 'Nouvelle phrase' : 'Nouveau mot';
+      frame(card, what, 'sparkle', `
         <div class="intro">
-          <span class="new-badge">${icon('star')} Nouveau</span>
+          <span class="new-badge">${icon('star')} ${card.script || card.sentence ? 'Nouvelle' : 'Nouveau'}</span>
           ${termBlock(card)}
           <div class="fr big-fr">${esc(card.fr)}</div>
           ${exampleHtml(card, lang)}
           ${card.note ? `<p class="note">${icon('lightbulb')} ${esc(card.note)}</p>` : ''}
+          ${tipsHtml(deckOf[card.deckId], { compact: true })}
         </div>`);
-      if (store.settings.autoSpeak && canSpeak(code)) speak(card.term, code);
-      controls(`<button type="button" class="btn primary full" id="got">Je le retiens <kbd>Entrée</kbd></button>`);
+      if (store.settings.autoSpeak && canSpeak(code) && !card.script) speak(card.term, code);
+      controls(`<button type="button" class="btn primary full" id="got">Je retiens <kbd>Entrée</kbd></button>`);
       const proceed = () => {
         keys = {};
         // Test juste après un ou deux autres exercices : rappel à court terme.
@@ -669,19 +765,19 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
     },
 
     [KINDS.MCQ_MEANING](card) {
-      const options = choicesFor(card, pool, 'fr');
+      const options = choicesFor(card, poolFor(card), 'fr');
       frame(card, KIND_LABELS[KINDS.MCQ_MEANING], 'target', `<div class="prompt">${termBlock(card)}</div>${choiceButtons(options, false)}`);
       bindChoices(card, options, card.fr);
     },
 
     [KINDS.MCQ_TERM](card) {
-      const options = choicesFor(card, pool, 'term');
+      const options = choicesFor(card, poolFor(card), 'term');
       frame(card, KIND_LABELS[KINDS.MCQ_TERM], 'target', `<div class="prompt"><span class="prompt-fr glow">${esc(card.fr)}</span></div>${choiceButtons(options, true)}`);
       bindChoices(card, options, card.term);
     },
 
     [KINDS.LISTEN](card) {
-      const options = choicesFor(card, pool, 'fr');
+      const options = choicesFor(card, poolFor(card), 'fr');
       frame(card, KIND_LABELS[KINDS.LISTEN], 'headphones', `
         <div class="prompt listen">
           <button type="button" class="play" data-say="${esc(card.term)}" aria-label="Réécouter">${icon('speaker')}</button>
@@ -694,7 +790,7 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
     [KINDS.CLOZE_MCQ](card) {
       const cz = clozeOf(card);
       if (!cz) return RENDERERS[KINDS.MCQ_TERM](card);
-      const options = choicesFor(card, pool, 'bare', Math.random, 4, cz.answer);
+      const options = choicesFor(card, poolFor(card), 'bare', Math.random, 4, cz.answer);
       frame(card, KIND_LABELS[KINDS.CLOZE_MCQ], 'quote', `
         <div class="prompt cloze">
           <p class="sentence" ${langAttrs(lang)}>${esc(cz.before)}<span class="blank">?</span>${esc(cz.after)}</p>
@@ -716,6 +812,14 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
     },
 
     [KINDS.TYPE](card) {
+      if (card.script) {
+        frame(card, 'Écris le son', 'pen', `
+          <div class="prompt">
+            ${termBlock(card)}
+            ${typeForm('En lettres latines…', 'lang="fr"')}
+          </div>`);
+        return bindType(card, [card.translit, card.key], hintFor(card.translit));
+      }
       frame(card, KIND_LABELS[KINDS.TYPE], 'pen', `
         <div class="prompt">
           <span class="prompt-fr glow">${esc(card.fr)}</span>
@@ -723,6 +827,83 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
           ${card.translit ? '<p class="muted small form-note">Écriture locale ou lettres latines : les deux sont acceptées.</p>' : ''}
         </div>`);
       bindType(card, [card.term, card.translit], hintFor(card.translit || card.term));
+    },
+
+    [KINDS.ORDER](card) {
+      const reps = stateOf(card)?.reps || 0;
+      const { answer, tiles } = orderTiles(card, poolFor(card), Math.random, quiz ? 1 : Math.min(2, reps));
+      frame(card, KIND_LABELS[KINDS.ORDER], 'shuffle', `
+        <div class="prompt"><span class="prompt-fr glow">${esc(card.fr)}</span></div>
+        <div class="order-answer" ${langAttrs(lang)} aria-live="polite"></div>
+        <div class="order-bank" ${langAttrs(lang)}>
+          ${tiles.map((t, i) => `<button type="button" class="tile" data-t="${i}">${esc(t)}</button>`).join('')}
+        </div>`);
+      controls(`<button type="button" class="btn primary full" id="check" disabled>Vérifier <kbd>Entrée</kbd></button>`);
+      const chosen = [];
+      const answerEl = $('.order-answer');
+      const bankEl = $('.order-bank');
+      const refresh = () => { $('#check').disabled = !chosen.length; };
+      bankEl.addEventListener('click', (e) => {
+        const b = e.target.closest('.tile');
+        if (!b || b.disabled) return;
+        chosen.push(b.dataset.t);
+        b.disabled = true;
+        answerEl.insertAdjacentHTML('beforeend', `<button type="button" class="tile placed" data-t="${b.dataset.t}">${b.innerHTML}</button>`);
+        refresh();
+      });
+      answerEl.addEventListener('click', (e) => {
+        const b = e.target.closest('.tile');
+        if (!b || answerEl.classList.contains('locked')) return;
+        chosen.splice(chosen.indexOf(b.dataset.t), 1);
+        b.remove();
+        bankEl.querySelector(`[data-t="${b.dataset.t}"]`).disabled = false;
+        refresh();
+      });
+      const check = () => {
+        if (!chosen.length || answerEl.classList.contains('locked')) return;
+        answerEl.classList.add('locked');
+        bankEl.querySelectorAll('.tile').forEach((b) => { b.disabled = true; });
+        const given = chosen.map((i) => tiles[i]).join(' ');
+        showResult(card, { ok: normalize(given) === normalize(answer.join(' ')), given });
+      };
+      $('#check').addEventListener('click', check);
+      keys = { enter: check };
+    },
+
+    [KINDS.SPEAK](card) {
+      frame(card, KIND_LABELS[KINDS.SPEAK], 'mic', `
+        <div class="prompt speak-ex">
+          ${termBlock(card)}
+          <div class="fr">${esc(card.fr)}</div>
+          <p class="muted small">Écoute, puis répète à voix haute en imitant la mélodie de la phrase.</p>
+          ${canRecognize() ? `<button type="button" class="mic" id="mic" aria-label="Parler">${icon('mic')}</button><p class="heard small" id="heard"></p>` : ''}
+        </div>`);
+      setTimeout(() => speak(card.term, code), 250);
+      controls(`
+        <div class="self-eval">
+          <button type="button" class="btn" id="retry">${icon('x')} Pas encore <kbd>1</kbd></button>
+          <button type="button" class="btn primary" id="said">${icon('check')} Bien dit <kbd>2</kbd></button>
+        </div>`);
+      // Auto-évaluation : la reconnaissance vocale n'est qu'une aide, jamais un verdict.
+      const finishWith = (grade) => { keys = {}; settle(card, grade); next(); };
+      $('#retry').addEventListener('click', () => finishWith(GRADES.HARD));
+      $('#said').addEventListener('click', () => finishWith(GRADES.GOOD));
+      keys = { num: (i) => (i === 0 ? finishWith(GRADES.HARD) : i === 1 ? finishWith(GRADES.GOOD) : null), enter: () => finishWith(GRADES.GOOD) };
+      $('#mic')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const heardEl = $('#heard');
+        btn.classList.add('listening');
+        heardEl.textContent = 'Je t’écoute…';
+        const heard = await recognizeOnce(code);
+        btn.classList.remove('listening');
+        if (!heard?.length) {
+          heardEl.textContent = 'Je n’ai rien entendu. Réessaie, ou évalue-toi toi-même.';
+          return;
+        }
+        const best = heard.map((h) => gradeTyped(h, card.term, card.translit)).sort((a, b) => ['exact', 'close', 'wrong'].indexOf(a) - ['exact', 'close', 'wrong'].indexOf(b))[0];
+        heardEl.innerHTML = `J’ai entendu : « <b>${esc(heard[0])}</b> » · ${best === 'wrong' ? 'pas tout à fait, réessaie !' : best === 'close' ? 'presque !' : 'parfait !'}`;
+        heardEl.className = `heard small ${best === 'wrong' ? 'ko' : 'ok'}`;
+      });
     },
 
     [KINDS.FLASH](card) {
@@ -769,6 +950,114 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode } = {}) {
   }
 
   next();
+}
+
+// ---------- Dialogues : lire, écouter, comprendre ----------
+
+async function viewDialogue(code, id) {
+  setActiveTab('home');
+  const lang = getLanguage(code);
+  if (!lang) return go('#/');
+  const { dialogues } = await loadLanguage(code);
+  const d = dialogues.find((x) => x.id === id);
+  if (!d) return go(`#/lang/${code}`);
+  setTheme(d.hue);
+  const firstSpeaker = d.lines[0].who;
+
+  render(`
+    ${banner(interleave([code], [{ icon: d.icon, hue: d.hue }, { icon: 'headphones', hue: d.hue }]), { compact: true })}
+    ${pageHead({
+      back: { href: `#/lang/${code}`, label: lang.name },
+      eyebrow: `${d.level} · Dialogue`,
+      mark: icon(d.icon),
+      title: esc(d.title),
+      lede: esc(d.context),
+    })}
+    <div class="quick-row">
+      <button type="button" class="chip-btn glass" id="play-all">${icon('speaker')} <span>Tout écouter</span></button>
+      <button type="button" class="chip-btn glass" id="toggle-fr" aria-pressed="false">${icon('eye')} Traduction</button>
+    </div>
+    <div class="dialogue" id="dialogue">
+      ${d.lines.map((l, i) => `
+        <div class="bubble ${l.who === firstSpeaker ? 'left' : 'right'}" data-i="${i}">
+          <span class="who">${esc(l.who)}</span>
+          <p class="line" ${langAttrs(lang)}>${esc(l.text)} ${speakBtn(l.text, 'small')}</p>
+          ${l.tr ? `<p class="translit">${esc(l.tr)}</p>` : ''}
+          <p class="line-fr">${esc(l.fr)}</p>
+        </div>`).join('')}
+    </div>
+    <p class="notice">${icon('mic')} <span><b>Shadowing :</b> écoute une réplique, puis répète-la à voix haute tout de suite après, en imitant le rythme. Rejoue le dialogue jusqu’à pouvoir le dire sans lire.</span></p>
+    <h2 class="section-title">Compréhension</h2>
+    <section id="dia-quiz" class="dia-quiz"></section>
+  `);
+  bindSpeak(app, code);
+
+  const dlg = $id('dialogue');
+  $id('toggle-fr').addEventListener('click', (e) => {
+    const on = dlg.classList.toggle('show-fr');
+    e.currentTarget.setAttribute('aria-pressed', String(on));
+  });
+
+  let stopPlaying = null;
+  const playBtn = $id('play-all');
+  playBtn.addEventListener('click', () => {
+    if (stopPlaying) { stopPlaying(); return; }
+    playBtn.querySelector('span').textContent = 'Arrêter';
+    stopPlaying = speakSequence(d.lines.map((l) => l.text), code, (i) => {
+      dlg.querySelectorAll('.bubble').forEach((b) => b.classList.toggle('speaking', Number(b.dataset.i) === i));
+      if (i >= 0) dlg.querySelector(`[data-i="${i}"]`).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (i === -1) { stopPlaying = null; playBtn.querySelector('span').textContent = 'Tout écouter'; }
+    });
+  });
+  cleanup = () => stopPlaying?.();
+
+  // Questions, une par une, avec les propositions mélangées.
+  const quizEl = $id('dia-quiz');
+  let qi = 0;
+  let right = 0;
+  const ask = () => {
+    if (qi >= d.questions.length) {
+      const score = pct(right, d.questions.length);
+      const key = `${code}:${d.id}`;
+      const prev = store.dialogues[key]?.best || 0;
+      store.dialogues[key] = { best: Math.max(prev, score), at: today() };
+      save();
+      quizEl.innerHTML = `
+        <div class="glass dia-score" style="--rim:var(--gold)">
+          <p class="score glow-gold">${score}<small>%</small></p>
+          <p class="muted">${plural(right, 'bonne réponse', 'bonnes réponses')} sur ${d.questions.length}</p>
+          <button type="button" class="btn" id="dia-again">Recommencer</button>
+        </div>`;
+      $id('dia-again').addEventListener('click', () => { qi = 0; right = 0; ask(); });
+      return;
+    }
+    const q = d.questions[qi];
+    const options = shuffle(q.options.map((text, i) => ({ text, ok: i === q.answer })));
+    quizEl.innerHTML = `
+      <div class="glass dia-q">
+        <p class="muted small">Question ${qi + 1}/${d.questions.length}</p>
+        <p class="q">${esc(q.q)}</p>
+        <div class="choices">${options.map((o, i) => `<button type="button" class="choice" data-i="${i}"><kbd>${i + 1}</kbd><span>${esc(o.text)}</span></button>`).join('')}</div>
+      </div>`;
+    quizEl.querySelectorAll('.choice').forEach((b) => b.addEventListener('click', () => {
+      const chosen = options[Number(b.dataset.i)];
+      quizEl.querySelectorAll('.choice').forEach((x, j) => {
+        x.disabled = true;
+        if (options[j].ok) x.classList.add('right');
+        else if (x === b) x.classList.add('wrong');
+      });
+      if (chosen.ok) right++;
+      logReview(false, chosen.ok, code);
+      save();
+      qi++;
+      setTimeout(ask, 900);
+    }));
+  };
+  ask();
+}
+
+function $id(id) {
+  return document.getElementById(id);
 }
 
 // ---------- Statistiques ----------
@@ -923,6 +1212,12 @@ function viewSettings() {
       <label class="row switch"><span>Prononcer automatiquement</span>
         <input type="checkbox" name="autoSpeak" ${s.autoSpeak ? 'checked' : ''}>
       </label>
+      <label class="row switch"><span>Reconnaissance vocale (exercices « À toi de le dire »)
+        <small class="muted">${Recognition
+          ? 'Selon le navigateur, ta voix peut être envoyée au service de Google ou d’Apple pour être transcrite. Désactivée par défaut.'
+          : 'Non disponible dans ce navigateur : tu t’auto-évalues après avoir répété.'}</small></span>
+        <input type="checkbox" name="recognition" ${s.recognition ? 'checked' : ''} ${Recognition ? '' : 'disabled'}>
+      </label>
     </form>
 
     <h2 class="section-title">Voix sur cet appareil</h2>
@@ -938,7 +1233,7 @@ function viewSettings() {
       <label class="btn">Importer<input type="file" id="import" accept="application/json,.json" hidden></label>
       <button class="btn danger" id="reset">Tout effacer</button>
     </div>
-    <p class="muted small about">Lingua · aucune donnée ne quitte ton appareil.</p>
+    <p class="muted small about">Lingua · tes données restent sur ton appareil (sauf l’audio, si tu actives la reconnaissance vocale).</p>
   `);
 
   app.querySelector('#settings').addEventListener('change', (e) => {
@@ -946,6 +1241,7 @@ function viewSettings() {
     s.mode = f.mode.value;
     s.newPerDay = Math.max(0, Math.min(100, parseInt(f.newPerDay.value, 10) || 0));
     s.autoSpeak = f.autoSpeak.checked;
+    s.recognition = f.recognition.checked;
     toast(save() ? 'Réglages enregistrés' : 'Impossible d’enregistrer sur cet appareil');
   });
 
@@ -991,6 +1287,7 @@ async function route() {
     else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined });
     else if (view === 'quiz') await viewSession(a, b || 'all', { quiz: true });
     else if (view === 'browse') await viewBrowse(a, b);
+    else if (view === 'dialogue') await viewDialogue(a, b);
     else if (view === 'stats') await viewStats();
     else if (view === 'method') viewMethod();
     else if (view === 'settings') viewSettings();

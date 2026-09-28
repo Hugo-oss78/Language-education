@@ -4,9 +4,10 @@ const KEY = 'lingua.v1';
 
 const DEFAULTS = {
   progress: {}, // id de carte -> état SRS
-  settings: { mode: 'auto', newPerDay: 10, autoSpeak: true, lastLang: null },
+  settings: { mode: 'auto', newPerDay: 10, autoSpeak: true, recognition: false, lastLang: null },
   customDecks: {}, // code langue -> [paquets]
   history: {}, // 'AAAA-MM-JJ' -> { reviews, newCards }
+  dialogues: {}, // 'langue:id' -> { best, at }
 };
 
 let data = load();
@@ -28,6 +29,7 @@ function merge(saved) {
     settings: { ...d.settings, ...saved.settings },
     customDecks: saved.customDecks || d.customDecks,
     history: saved.history || d.history,
+    dialogues: saved.dialogues || d.dialogues,
   };
 }
 
@@ -45,6 +47,7 @@ export const store = {
   get settings() { return data.settings; },
   get customDecks() { return data.customDecks; },
   get history() { return data.history; },
+  get dialogues() { return data.dialogues; },
 };
 
 export function today(date = new Date()) {

@@ -5,15 +5,18 @@ anglais, espagnol, indonésien, népalais et arabe.
 
 - Fonctionne sur téléphone et ordinateur, **hors ligne** une fois ouverte.
 - Aucun compte : la progression reste **sur l’appareil** (export / import possible).
-- **688 cartes** réparties en 41 paquets, du niveau A1 au B2 (niveaux indicatifs).
+- **834 cartes** (mots, lettres, phrases) en 51 paquets et **15 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
 
 | Langue | Paquets | Cartes | Remarque |
 |---|---|---|---|
-| Anglais | 10 | 173 | B1–B2 : conversation, collocations, faux amis, phrasal verbs, nuances… |
-| Espagnol | 9 | 151 | A1–B2, variantes d’Amérique latine signalées |
-| Indonésien | 8 | 142 | A1–B1, dont un paquet de grammaire en phrases |
-| Népalais | 7 | 111 | A1–B1, devanagari + translittération · **à faire relire** |
-| Arabe | 7 | 111 | Arabe standard (fuṣḥā), écriture de droite à gauche + translittération · **à faire relire** |
+| Anglais | 11 | 188 | B1–B2 : conversation, collocations, faux amis, phrasal verbs, nuances, phrases |
+| Espagnol | 10 | 165 | A1–B2, variantes d’Amérique latine signalées |
+| Indonésien | 9 | 156 | A1–B1, grammaire en phrases |
+| Népalais | 11 | 174 | Alphabet devanagari + A1–B1, translittération · **à faire relire** |
+| Arabe | 10 | 151 | Alphabet + arabe standard (fuṣḥā), de droite à gauche · **à faire relire** |
+
+Chaque langue a aussi 3 **dialogues** (audio, traduction, questions de compréhension)
+et un paquet **« Construire des phrases »** avec sa fiche de grammaire.
 
 ## Exercices
 
@@ -23,6 +26,11 @@ La séance du jour mélange révisions et nouveaux mots. Chaque mot suit une **d
 2. **Reconnaître** : QCM dans les deux sens (intrus pris dans le même thème).
 3. **En contexte** : phrase à trous, en QCM puis à écrire.
 4. **Produire** : écrire la traduction (petites fautes de frappe tolérées, translittération acceptée pour le népalais et l’arabe), comprendre à l’oral.
+
+Les **phrases** se remettent dans l’ordre, s’écrivent et se **répètent à voix haute** (« À toi de le dire »).
+Les **lettres** (népalais, arabe) : reconnaître la lettre, la retrouver, écrire son son.
+La **reconnaissance vocale** est facultative et désactivée par défaut : selon le navigateur,
+l’audio peut être envoyé au service de Google ou d’Apple. Sans elle, on s’auto-évalue.
 
 Aussi : **Quiz éclair** (10 questions de tous types), mode **Cartes seules** (auto-évaluation), indices, « J’avais raison » pour faire accepter un synonyme.
 
@@ -70,7 +78,8 @@ Le workflow `.github/workflows/pages.yml` lance les tests puis publie le site à
 
 1. Créer `data/<code>.js` sur le modèle des autres fichiers. Paquet : `id`, `title`, `icon`
    (voir `js/icons.js`), `hue`, `level`, `description`, `cards`. Carte : `fr`, `term`, et en option
-   `translit`, `example`, `exampleTr`, `exampleFr`, `note`.
+   `translit`, `example`, `exampleTr`, `exampleFr`, `note`. Un paquet `type: 'script'` (lettres, champ `key`)
+   ou `type: 'sentences'` (phrases, avec `tips`) change les exercices proposés. Les dialogues vont dans `dialogues`.
 2. L’ajouter dans `data/languages.js` et dans la liste `FILES` de `sw.js` (et changer `VERSION`).
 3. `npm test` vérifie le contenu (champs, doublons, icônes, niveaux).
 
