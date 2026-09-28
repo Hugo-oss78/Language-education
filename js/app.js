@@ -67,6 +67,62 @@ function setActiveTab(name) {
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === name));
 }
 
+// Icônes au trait (style « lucide »).
+const ICONS = {
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  play: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  flame: '<path d="M12 22c4 0 7-3 7-7 0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8 0 4 3 7 7 7z"/>',
+};
+
+function icon(name) {
+  return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+}
+
+// Bandeau décoratif : drapeaux et icônes du thème qui flottent au-dessus d'une vague.
+// La disposition est pseudo-aléatoire mais stable pour une même liste d'éléments.
+function banner(items, { compact = false } = {}) {
+  let seed = [...items.join('')].reduce((h, ch) => (h * 31 + ch.codePointAt(0)) >>> 0, 7);
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const slots = compact ? 7 : 9;
+  const maxY = compact ? 34 : 70;
+  const floaties = Array.from({ length: slots }, (_, i) => {
+    const item = items[i % items.length];
+    const x = ((i + 0.5) / slots) * 100 + (rand() - 0.5) * 6;
+    const y = 8 + rand() * maxY;
+    const size = (compact ? 18 : 22) + rand() * (compact ? 10 : 14);
+    const r = Math.round((rand() - 0.5) * 24);
+    const glyph = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(item) ? '' : ' glyph';
+    return `<span class="floaty${glyph}" style="left:calc(${x.toFixed(1)}% - ${size / 2}px);top:${y.toFixed(0)}px;font-size:${size.toFixed(0)}px;--r:${r}deg;transform:rotate(${r}deg);animation-delay:-${(rand() * 6).toFixed(1)}s">${esc(item)}</span>`;
+  }).join('');
+  return `
+    <div class="banner${compact ? ' compact' : ''}" aria-hidden="true">
+      ${floaties}
+      <svg class="wave" viewBox="0 0 400 40" preserveAspectRatio="none"><path d="M0 22C50 4 100 4 150 20s100 18 150 2 75-12 100-4"/></svg>
+    </div>`;
+}
+
+// Mélange drapeaux et icônes de thème : 🇬🇧 🪤 🇬🇧 🧩 …
+function interleave(flags, themes) {
+  if (!themes.length) return flags;
+  return themes.flatMap((t, i) => [flags[i % flags.length], t]);
+}
+
+function pageHead({ back, eyebrow, mark = icon('globe'), title, lede, saved }) {
+  return `
+    <header class="page-head">
+      ${back ? `<a class="back" href="${back.href}">${icon('back')} ${esc(back.label)}</a>` : ''}
+      ${eyebrow ? `<div class="eyebrow"><span class="ring">${mark}</span>${esc(eyebrow)}</div>` : ''}
+      <h1>${esc(title)}</h1>
+      ${lede ? `<p class="lede">${lede}</p>` : ''}
+      ${saved ? `<p class="saved">${icon('check')} ${saved}</p>` : ''}
+    </header>`;
+}
+
 // ---------- Synthèse vocale ----------
 
 function speak(text, langCode) {
@@ -92,10 +148,14 @@ async function viewHome() {
   const s = streak();
 
   render(`
-    <header class="page-head">
-      <h1>Bonjour 👋</h1>
-      <p class="muted">${s ? `🔥 ${s} jour${s > 1 ? 's' : ''} d’affilée — continue !` : 'Une petite séance aujourd’hui ?'}</p>
-    </header>
+    ${banner(interleave(LANGUAGES.map((l) => l.flag), ['💬', '📚', '✈️']))}
+    ${pageHead({
+      eyebrow: 'Carnet de langues',
+      title: 'Lingua',
+      lede: 'Un mot à la fois, un peu plus loin chaque jour.',
+      saved: s ? `${s} jour${s > 1 ? 's' : ''} d’affilée · sauvegardé sur cet appareil` : 'Sauvegardé sur cet appareil',
+    })}
+    <h2 class="section-title">Quelle langue aujourd’hui ?</h2>
     <section class="lang-list">
       ${rows.map(({ l, counts }) => l.available ? `
         <a class="lang-card" href="#/lang/${l.code}">
@@ -132,41 +192,46 @@ async function viewLanguage(code) {
   const newToday = Math.min(newLeftToday(), all.fresh);
 
   render(`
-    <header class="page-head">
-      <a class="back" href="#/">← Langues</a>
-      <h1><span aria-hidden="true">${lang.flag}</span> ${lang.name}</h1>
-    </header>
+    ${banner(interleave([lang.flag], decks.map((d) => d.icon || '📝')))}
+    ${pageHead({
+      back: { href: '#/', label: 'Langues' },
+      eyebrow: lang.native,
+      mark: esc(lang.flag),
+      title: lang.name,
+      lede: `${all.seen} cartes vues sur ${all.total} · ${all.mature} maîtrisées`,
+    })}
     <a class="cta ${all.due + newToday ? '' : 'idle'}" href="#/review/${code}/all">
-      <strong>${all.due + newToday ? 'Commencer la séance' : 'Réviser quand même'}</strong>
-      <span>${all.due} à revoir · ${newToday} nouvelle${newToday > 1 ? 's' : ''}</span>
+      <span>
+        <strong>${all.due + newToday ? 'Commencer la séance' : 'Réviser quand même'}</strong>
+        <span>${all.due} à revoir · ${newToday} nouvelle${newToday > 1 ? 's' : ''}</span>
+      </span>
+      ${icon('play')}
     </a>
-    <h2 class="section-title">Paquets</h2>
-    <section class="deck-list">
+    <h2 class="section-title">C’est plutôt…</h2>
+    <section class="deck-grid">
       ${decks.map((d) => {
         const c = deckCounts(d.cards);
         const pct = Math.round((c.seen / c.total) * 100);
         return `
         <article class="deck">
-          <a class="deck-main" href="#/review/${code}/${d.id}">
+          <a class="deck-hit" href="#/review/${code}/${d.id}">
             <span class="deck-icon" aria-hidden="true">${esc(d.icon || '📝')}</span>
-            <span class="deck-body">
-              <strong>${esc(d.title)}</strong>
-              <span class="muted small">${esc(d.description || '')}</span>
-              <span class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cartes vues">
-                <span style="width:${pct}%"></span>
-              </span>
-              <span class="muted small">${c.seen}/${c.total} vues · ${c.mature} maîtrisées${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
-            </span>
+            <strong>${esc(d.title)}</strong>
+            <span class="desc">${esc(d.description || '')}</span>
           </a>
-          <div class="deck-actions">
+          <span class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cartes vues">
+            <span style="width:${pct}%"></span>
+          </span>
+          <span class="meta">${c.seen}/${c.total} vues${c.due ? ` · <b class="due-text">${c.due} à revoir</b>` : ''}</span>
+          <span class="deck-links">
             <a href="#/browse/${code}/${d.id}">Voir la liste</a>
-            ${d.custom ? `<button class="link danger" data-delete="${d.id}">Supprimer</button>` : ''}
-          </div>
+            ${d.custom ? `<button class="link" data-delete="${d.id}">Supprimer</button>` : ''}
+          </span>
         </article>`;
       }).join('')}
     </section>
     <details class="import">
-      <summary>➕ Créer mon propre paquet (CSV)</summary>
+      <summary>${icon('plus')} Créer mon propre paquet (CSV)</summary>
       <p class="muted small">Une ligne par carte : <code>français ; ${lang.name.toLowerCase()} ; exemple ; note</code>.
       Les deux dernières colonnes sont facultatives. Sépare les réponses possibles par « / ».</p>
       <form id="import-form">
@@ -210,10 +275,14 @@ async function viewBrowse(code, deckId) {
   const deck = (await loadDecks(code)).find((d) => d.id === deckId);
   if (!deck) return (location.hash = `#/lang/${code}`);
   render(`
-    <header class="page-head">
-      <a class="back" href="#/lang/${code}">← ${lang.name}</a>
-      <h1>${esc(deck.icon || '')} ${esc(deck.title)}</h1>
-    </header>
+    ${banner(interleave([lang.flag], [deck.icon || '📝']), { compact: true })}
+    ${pageHead({
+      back: { href: `#/lang/${code}`, label: lang.name },
+      eyebrow: `${deck.cards.length} cartes`,
+      mark: esc(deck.icon || '📝'),
+      title: deck.title,
+      lede: esc(deck.description || ''),
+    })}
     <ul class="word-list">
       ${deck.cards.map((c) => {
         const s = store.progress[c.id];
@@ -227,7 +296,7 @@ async function viewBrowse(code, deckId) {
             ${c.note ? `<span class="note small">${esc(c.note)}</span>` : ''}
           </div>
           <div class="word-side">
-            <button class="icon-btn" data-say="${esc(c.term)}" aria-label="Écouter ${esc(c.term)}">🔊</button>
+            <button class="icon-btn" data-say="${esc(c.term)}" aria-label="Écouter ${esc(c.term)}">${icon('speaker')}</button>
             <span class="chip ${slug(status)}">${status}</span>
           </div>
         </li>`;
@@ -268,12 +337,12 @@ async function viewReview(code, deckId) {
 
   const back = `#/lang/${code}`;
   const title = deckId === 'all' ? 'Séance du jour' : scope[0].title;
+  const iconOf = Object.fromEntries(decks.map((d) => [d.id, d.icon || '📝']));
 
   if (!total) {
     return render(`
-      <header class="page-head"><a class="back" href="${back}">← ${lang.name}</a></header>
+      ${banner(interleave([lang.flag], ['🎉', ...scope.map((d) => iconOf[d.id])]))}
       <section class="empty">
-        <p class="big">🎉</p>
         <h1>Tout est à jour !</h1>
         <p class="muted">Aucune carte à revoir pour l’instant et le quota de nouvelles cartes du jour est atteint.
         Tu peux l’augmenter dans les <a href="#/settings">réglages</a>.</p>
@@ -295,16 +364,17 @@ async function viewReview(code, deckId) {
     const promptAttrs = c.showFr ? 'lang="fr"' : `lang="${code}" dir="${lang.dir}"`;
     render(`
       <header class="review-head">
-        <a class="back" href="${back}" aria-label="Quitter la séance">✕</a>
+        <a class="back" href="${back}" aria-label="Quitter la séance">${icon('x')}</a>
         <div class="progress wide" role="progressbar" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}" aria-label="Progression de la séance">
           <span style="width:${(done / total) * 100}%"></span>
         </div>
         <span class="muted small">${done}/${total}</span>
       </header>
-      <p class="muted small center">${esc(title)} · ${c.showFr ? `Français → ${lang.name}` : `${lang.name} → Français`}</p>
+      ${banner(interleave([lang.flag], [iconOf[c.deckId]]), { compact: true })}
+      <p class="review-meta">${esc(title)} · ${c.showFr ? `Français → ${lang.name}` : `${lang.name} → Français`}</p>
       <article class="flashcard" aria-live="polite">
         <div class="prompt" ${promptAttrs}>${esc(prompt)}</div>
-        ${!c.showFr ? `<button class="icon-btn speak" data-say aria-label="Écouter">🔊</button>` : ''}
+        ${!c.showFr ? `<button class="icon-btn speak" data-say aria-label="Écouter">${icon('speaker')}</button>` : ''}
         <div id="answer" hidden></div>
       </article>
       <div id="controls">
@@ -339,15 +409,15 @@ async function viewReview(code, deckId) {
     box.hidden = false;
     box.innerHTML = `
       <hr>
-      ${typed ? `<p class="verdict ${typed.ok ? 'ok' : 'ko'}">${typed.ok ? '✔ Bonne réponse' : `✘ Ta réponse : « ${esc(typed.guess || '—')} »`}</p>` : ''}
+      ${typed ? `<p class="verdict ${typed.ok ? 'ok' : 'ko'}">${typed.ok ? `${icon('check')} Bonne réponse` : `${icon('x')} Ta réponse : « ${esc(typed.guess || '—')} »`}</p>` : ''}
       <div class="answer" ${answerAttrs}>${esc(answer)}</div>
       ${c.translit ? `<div class="translit">${esc(c.translit)}</div>` : ''}
       ${c.example ? `<p class="example" lang="${code}" dir="${lang.dir}">
-        <button class="icon-btn small" data-say-example aria-label="Écouter l’exemple">🔊</button> ${esc(c.example)}</p>` : ''}
+        <button class="icon-btn small" data-say-example aria-label="Écouter l’exemple">${icon('speaker')}</button> ${esc(c.example)}</p>` : ''}
       ${c.note ? `<p class="note">💡 ${esc(c.note)}</p>` : ''}
     `;
     if (c.showFr) {
-      box.querySelector('.answer').insertAdjacentHTML('beforeend', ' <button class="icon-btn small" data-say-term aria-label="Écouter">🔊</button>');
+      box.querySelector('.answer').insertAdjacentHTML('beforeend', ` <button class="icon-btn small" data-say-term aria-label="Écouter">${icon('speaker')}</button>`);
       box.querySelector('[data-say-term]').addEventListener('click', () => speak(c.term, code));
       if (store.settings.autoSpeak) speak(c.term, code);
     }
@@ -386,11 +456,11 @@ async function viewReview(code, deckId) {
   function finish() {
     document.removeEventListener('keydown', onKey);
     render(`
+      ${banner(interleave([lang.flag], ['🎉', ...scope.map((d) => iconOf[d.id]), '⭐']))}
       <section class="empty">
-        <p class="big">🎉</p>
         <h1>Séance terminée !</h1>
         <p class="muted">${done} carte${done > 1 ? 's' : ''} révisée${done > 1 ? 's' : ''}${tally.again ? `, ${tally.again} erreur${tally.again > 1 ? 's' : ''} rattrapée${tally.again > 1 ? 's' : ''}` : ' sans erreur'}.</p>
-        <p class="muted">🔥 Série : ${streak()} jour${streak() > 1 ? 's' : ''}</p>
+        <p class="saved">${icon('flame')} Série : ${streak()} jour${streak() > 1 ? 's' : ''}</p>
         <a class="btn primary" href="${back}">Retour aux paquets</a>
       </section>`);
   }
@@ -429,7 +499,8 @@ async function viewStats() {
   }));
 
   render(`
-    <header class="page-head"><h1>Statistiques</h1></header>
+    ${banner(interleave(LANGUAGES.filter((l) => l.available).map((l) => l.flag), ['📈', '🔥', '🎯']))}
+    ${pageHead({ eyebrow: 'Carnet de bord', title: 'Statistiques', lede: 'Ce que tu as déjà parcouru.' })}
     <section class="tiles">
       <div class="tile"><span class="tile-value">${streak()}</span><span class="tile-label">jours d’affilée</span></div>
       <div class="tile"><span class="tile-value">${seen}</span><span class="tile-label">cartes vues</span></div>
@@ -465,7 +536,8 @@ function viewSettings() {
   setActiveTab('settings');
   const s = store.settings;
   render(`
-    <header class="page-head"><h1>Réglages</h1></header>
+    ${banner(interleave(LANGUAGES.map((l) => l.flag), ['🧭', '🎧']))}
+    ${pageHead({ eyebrow: 'Carnet de langues', title: 'Réglages', lede: 'Adapte les séances à ton rythme.' })}
     <form id="settings" class="settings">
       <fieldset>
         <legend>Sens des cartes</legend>

@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v1';
+const VERSION = 'lingua-v2';
 const FILES = [
   './',
   'index.html',
@@ -15,6 +15,10 @@ const FILES = [
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
+  'fonts/fraunces-latin-600-normal.woff2',
+  'fonts/fraunces-latin-700-normal.woff2',
+  'fonts/ibm-plex-sans-latin-400-normal.woff2',
+  'fonts/ibm-plex-sans-latin-500-normal.woff2',
 ];
 
 self.addEventListener('install', (event) => {

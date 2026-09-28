@@ -57,13 +57,15 @@ vérifiez-les avec un dictionnaire de référence, surtout pour les langues moin
 
 ```
 index.html            page unique
-css/style.css         styles (thème clair / sombre automatique)
+css/style.css         styles (thème « carnet de voyage » sombre)
 js/app.js             interface et navigation
 js/srs.js             algorithme de répétition espacée
 js/text.js            comparaison des réponses, lecture CSV
 js/storage.js         sauvegarde locale
 data/languages.js     langues proposées
 data/en.js            paquets d’anglais
+fonts/                Fraunces + IBM Plex Sans (licence SIL OFL)
+icons/                icône : planète entourée de drapeaux
 sw.js                 mode hors ligne
 tests/                tests (node --test)
 ```
