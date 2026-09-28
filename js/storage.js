@@ -4,7 +4,7 @@ const KEY = 'lingua.v1';
 
 const DEFAULTS = {
   progress: {}, // id de carte -> état SRS
-  settings: { direction: 'mixed', newPerDay: 10, typing: false, autoSpeak: false },
+  settings: { mode: 'auto', newPerDay: 10, autoSpeak: true, lastLang: null },
   customDecks: {}, // code langue -> [paquets]
   history: {}, // 'AAAA-MM-JJ' -> { reviews, newCards }
 };
@@ -54,14 +54,36 @@ export function today(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
-export function logReview(wasNew) {
+export function logReview(wasNew, correct, lang) {
   const day = (data.history[today()] ||= { reviews: 0, newCards: 0 });
   day.reviews += 1;
-  if (wasNew) day.newCards += 1;
+  if (wasNew) {
+    day.newCards += 1;
+    if (lang) (day.newBy ||= {})[lang] = (day.newBy[lang] || 0) + 1;
+  }
+  if (correct !== undefined) {
+    day.graded = (day.graded || 0) + 1;
+    if (correct) day.correct = (day.correct || 0) + 1;
+  }
 }
 
-export function newCardsToday() {
-  return data.history[today()]?.newCards || 0;
+// Taux de bonnes réponses sur les `days` derniers jours (null si aucune donnée).
+export function accuracy(days = 30, date = new Date()) {
+  let graded = 0, correct = 0;
+  const d = new Date(date);
+  for (let i = 0; i < days; i++) {
+    const h = data.history[today(d)];
+    if (h) { graded += h.graded || 0; correct += h.correct || 0; }
+    d.setDate(d.getDate() - 1);
+  }
+  return graded ? correct / graded : null;
+}
+
+// Nouvelles cartes vues aujourd'hui (le quota est compté par langue).
+export function newCardsToday(lang) {
+  const day = data.history[today()];
+  if (!day) return 0;
+  return lang ? day.newBy?.[lang] || 0 : day.newCards || 0;
 }
 
 // Nombre de jours consécutifs avec au moins une révision (aujourd'hui ou hier inclus).
