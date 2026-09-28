@@ -44,7 +44,7 @@ body {
   color: var(--text);
   font: 17px/1.5 var(--sans);
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(118px + env(safe-area-inset-bottom));
+  padding-bottom: calc(86px + env(safe-area-inset-bottom));
 }
 
 /* Fond d'ambiance : deux halos discrets à la couleur du thème. */
@@ -442,8 +442,8 @@ body.in-session .controls:empty { display: none; }
 
 /* ---------- Barre d'onglets « verre liquide » ---------- */
 .tabbar {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom));
-  width: min(calc(100% - 24px), 480px); display: flex; gap: 4px; padding: 7px; border-radius: 32px; z-index: 10;
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(10px + env(safe-area-inset-bottom));
+  width: min(calc(100% - 48px), 360px); display: flex; gap: 2px; padding: 4px; border-radius: 26px; z-index: 10;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 16%), rgb(255 255 255 / 4%) 55%, rgb(255 255 255 / 7%)),
     rgb(20 38 45 / 45%);
@@ -460,16 +460,16 @@ body.in-session .controls:empty { display: none; }
 /* Reflet spéculaire en haut, comme une goutte de verre. */
 .tabbar::before {
   content: ""; position: absolute; left: 8%; right: 8%; top: 1px; height: 45%;
-  border-radius: 30px 30px 50% 50% / 30px 30px 14px 14px;
+  border-radius: 24px 24px 50% 50% / 24px 24px 10px 10px;
   background: linear-gradient(180deg, rgb(255 255 255 / 18%), rgb(255 255 255 / 0%));
   pointer-events: none;
 }
 .tabbar a {
-  position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 0.76rem; color: rgb(241 236 225 / 72%); text-decoration: none; padding: 9px 4px 8px; border-radius: 24px;
+  position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font-size: 0.66rem; color: rgb(241 236 225 / 72%); text-decoration: none; padding: 5px 2px 4px; border-radius: 22px;
   transition: color 0.2s, background 0.2s, box-shadow 0.2s;
 }
-.tabbar a .ico { width: 25px; height: 25px; stroke-width: 1.7; }
+.tabbar a .ico { width: 20px; height: 20px; stroke-width: 1.8; }
 .tabbar a:hover { color: var(--text); }
 .tabbar a.active {
   color: var(--gold); font-weight: 500;
@@ -483,7 +483,7 @@ body.in-session .controls:empty { display: none; }
 }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(112px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 0.9rem;
   z-index: 20; max-width: calc(100% - 32px); animation: pop 0.2s ease-out;
 }
