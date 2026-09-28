@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="sea" cx="36%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#4a98a0"/>
+      <stop offset="1" stop-color="#1b4a54"/>
+    </radialGradient>
+    <clipPath id="planet"><circle cx="256" cy="268" r="104"/></clipPath>
+    <clipPath id="front"><rect x="-300" y="0" width="600" height="200"/></clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#122027"/>
+  <circle cx="256" cy="268" r="176" fill="none" stroke="#2f5a60" stroke-width="3" stroke-dasharray="4 14" stroke-linecap="round"/>
+
+  <!-- Anneau (moitié arrière) -->
+  <g transform="translate(256 268) rotate(-16)">
+    <ellipse rx="164" ry="36" fill="none" stroke="#e39a52" stroke-width="11" opacity=".45"/>
+  </g>
+
+  <!-- Planète -->
+  <circle cx="256" cy="268" r="104" fill="url(#sea)"/>
+  <g clip-path="url(#planet)" fill="#9cc98a">
+    <path d="M168 214c22-20 56-22 72-7 12 11-4 27 9 39 14 14 39 2 46 20 5 14-16 27-36 27-27 0-30 23-50 27-21 4-43-14-48-39s-9-52 7-67z"/>
+    <path d="M292 186c20-5 44 4 55 20 9 14-7 20-20 18-16-2-23 11-36 7-14-4-16-40 1-45z"/>
+    <path d="M290 322c16-9 39-5 52 7 11 11 2 30-16 36-20 5-41-4-45-18-2-11 2-20 9-25z"/>
+  </g>
+
+  <!-- Anneau (moitié avant) -->
+  <g transform="translate(256 268) rotate(-16)">
+    <ellipse rx="164" ry="36" fill="none" stroke="#e39a52" stroke-width="11" clip-path="url(#front)"/>
+  </g>
+
+  <!-- Drapeaux en orbite (mât vertical, base à 0,0) -->
+  <g stroke-linejoin="round">
+    <!-- France -->
+    <g transform="translate(240 118)">
+      <rect x="-3" y="-64" width="6" height="64" rx="3" fill="#efeadf"/>
+      <rect x="3" y="-62" width="18" height="36" fill="#2b4fa8"/><rect x="21" y="-62" width="18" height="36" fill="#f4f1ea"/><rect x="39" y="-62" width="18" height="36" fill="#d8413a"/>
+    </g>
+    <!-- Royaume-Uni (simplifié) -->
+    <g transform="translate(92 214)">
+      <rect x="-3" y="-64" width="6" height="64" rx="3" fill="#efeadf"/>
+      <svg x="3" y="-62" width="54" height="36" viewBox="0 0 54 36"><rect width="54" height="36" fill="#243f8f"/><path d="M0 0l54 36M54 0L0 36" stroke="#f4f1ea" stroke-width="7"/><path d="M27 0v36M0 18h54" stroke="#f4f1ea" stroke-width="11"/><path d="M27 0v36M0 18h54" stroke="#d8413a" stroke-width="6"/></svg>
+    </g>
+    <!-- Espagne -->
+    <g transform="translate(372 170)">
+      <rect x="-3" y="-64" width="6" height="64" rx="3" fill="#efeadf"/>
+      <rect x="3" y="-62" width="54" height="36" fill="#c8362e"/><rect x="3" y="-53" width="54" height="18" fill="#f2c230"/>
+    </g>
+    <!-- Indonésie -->
+    <g transform="translate(108 420)">
+      <rect x="-3" y="-64" width="6" height="64" rx="3" fill="#efeadf"/>
+      <rect x="3" y="-62" width="54" height="18" fill="#d8413a"/><rect x="3" y="-44" width="54" height="18" fill="#f4f1ea"/>
+    </g>
+    <!-- Népal (double fanion) -->
+    <g transform="translate(398 404)">
+      <rect x="-3" y="-72" width="6" height="72" rx="3" fill="#efeadf"/>
+      <path d="M3 -70l40 24H17l30 28H3z" fill="#c8362e" stroke="#243f8f" stroke-width="4"/>
+    </g>
+    <!-- Arabe -->
+    <g transform="translate(252 470)">
+      <rect x="-3" y="-64" width="6" height="64" rx="3" fill="#efeadf"/>
+      <rect x="3" y="-62" width="54" height="36" fill="#2e7d4f"/>
+      <text x="30" y="-37" text-anchor="middle" font-family="Georgia, 'Noto Naskh Arabic', serif" font-size="26" font-weight="700" fill="#f4f1ea">ع</text>
+    </g>
+  </g>
+</svg>
