@@ -8,6 +8,7 @@ const DEFAULTS = {
   customDecks: {}, // code langue -> [paquets]
   history: {}, // 'AAAA-MM-JJ' -> { reviews, newCards }
   dialogues: {}, // 'langue:id' -> { best, at }
+  boosted: {}, // id de carte -> date : mots choisis pour être appris en priorité
 };
 
 let data = load();
@@ -30,6 +31,7 @@ function merge(saved) {
     customDecks: saved.customDecks || d.customDecks,
     history: saved.history || d.history,
     dialogues: saved.dialogues || d.dialogues,
+    boosted: saved.boosted || d.boosted,
   };
 }
 
@@ -48,6 +50,7 @@ export const store = {
   get customDecks() { return data.customDecks; },
   get history() { return data.history; },
   get dialogues() { return data.dialogues; },
+  get boosted() { return data.boosted; },
 };
 
 export function today(date = new Date()) {

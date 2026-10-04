@@ -25,6 +25,18 @@ Une unité regroupe 2 ou 3 thèmes et se termine par un **dialogue** qui sert d�
 Un thème est validé quand chaque carte a été réussie au moins une fois ; un dialogue, avec au moins 2 bonnes réponses sur 3.
 L’étape suivante est mise en avant, mais toutes restent ouvertes ; chaque unité a son quiz.
 
+## Ajouter ses propres mots
+
+Sur la page d’une langue, « Ajouter un mot » : on saisit un mot découvert (en français ou dans la langue).
+Lingua cherche d’abord dans sa base (paquets officiels et mots déjà ajoutés, dans les deux sens, translittération comprise) :
+
+- **déjà présent** → sa traduction s’affiche, et on peut l’ajouter aux mots du jour (ou le réviser aujourd’hui s’il est déjà appris) ;
+- **orthographe proche** → « Tu voulais dire… ? » ;
+- **nouveau** → on saisit la traduction, ou on demande une proposition au service gratuit MyMemory
+  (le mot lui est alors envoyé ; limites publiées : environ 5 000 caractères par jour). Une traduction automatique est marquée « à vérifier ».
+
+Les mots ajoutés rejoignent le paquet « Mes mots » et passent **en premier** dans les nouveaux mots du jour, en plus du quota.
+
 ## Exercices
 
 La séance du jour mélange révisions et nouveaux mots. Chaque mot suit une **difficulté progressive** :
@@ -102,6 +114,8 @@ css/style.css         styles (thème sombre, verre, lueurs)
 js/app.js             interface, séances, statistiques
 js/exercises.js       choix et construction des exercices
 js/path.js            découpage du parcours en unités et étapes
+js/lookup.js          recherche d’un mot dans la base (doublons, traductions)
+js/translate.js       suggestion de traduction en ligne (MyMemory, sur demande)
 js/srs.js             répétition espacée
 js/text.js            correction des réponses, lecture CSV
 js/storage.js         sauvegarde locale

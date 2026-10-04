@@ -1,6 +1,8 @@
 import { LANGUAGES, getLanguage } from '../data/languages.js';
 import { GRADES, isNew, isDue, isMature, review, previewIntervals } from './srs.js';
 import { gradeTyped, alternatives, parseCsv, rowsToCards, normalize } from './text.js';
+import { findInBase, translationsFrom } from './lookup.js';
+import { translateOnline } from './translate.js';
 import {
   KINDS, KIND_LABELS, clozeOf, choicesFor, pickExercise, pickQuizExercise, shuffle, bare, orderTiles,
 } from './exercises.js';
@@ -16,6 +18,7 @@ import {
 const app = document.getElementById('app');
 const langCache = {};
 const DEFAULT_HUE = '#e3b35a';
+const OWN_DECK = 'mes-mots'; // paquet des mots ajoutés par l'utilisateur
 
 // ---------- Données ----------
 
@@ -354,13 +357,15 @@ async function viewLanguage(code) {
   setTheme(lang.hue);
   const { decks, dialogues } = await loadLanguage(code);
   const all = counts(decks.flatMap((d) => d.cards));
-  const newToday = Math.min(newLeftToday(code), all.fresh);
+  // Mots choisis (ajoutés ou mis en avant) : en plus du quota quotidien.
+  const chosen = decks.flatMap((d) => d.cards).filter((c) => (c.deckId === OWN_DECK || store.boosted[c.id]) && isNew(stateOf(c))).length;
+  const newToday = Math.min(newLeftToday(code), all.fresh - chosen) + Math.min(chosen, 20);
   const path = await loadPath(code);
   const upNext = nextStep(path.units, path.statusOf);
   const prog = pathProgress(path.units, path.statusOf);
   const scriptDecks = decks.filter((d) => d.type === 'script');
   const byLevel = LEVELS
-    .map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv && d.type !== 'script') }))
+    .map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv && d.type !== 'script' && d.id !== OWN_DECK) }))
     .filter((g) => g.decks.length);
   const unit = (d) => (d.type === 'script' ? 'Lettres' : d.type === 'sentences' ? 'Phrases' : 'Mots');
   const deckTile = (d) => {
@@ -421,6 +426,14 @@ async function viewLanguage(code) {
       <a class="chip-btn glass" href="#/quiz/${code}/all">${icon('target')} Quiz éclair</a>
       <a class="chip-btn glass" href="#/session/${code}/all?mode=flash">${icon('cards')} Cartes seules</a>
     </div>
+    <a class="add-word glass" href="#/add/${code}" style="--rim:var(--gold)">
+      <span class="orb" style="--hue:var(--gold)">${icon('plus')}</span>
+      <span class="hero-body"><strong>Ajouter un mot</strong><span class="muted small">Un mot découvert ? Il rejoint tes mots du jour.</span></span>
+      ${icon('arrow')}
+    </a>
+    ${decks.some((d) => d.id === OWN_DECK) ? `
+      <h2 class="section-title level-title"><span class="level alt">${icon('pen')}</span> Mes mots</h2>
+      <section class="deck-grid">${deckTile(decks.find((d) => d.id === OWN_DECK))}</section>` : ''}
     ${scriptDecks.length ? `
       <h2 class="section-title level-title"><span class="level">ABC</span> Alphabet</h2>
       <section class="deck-grid">${scriptDecks.map(deckTile).join('')}</section>` : ''}
@@ -596,11 +609,216 @@ async function viewBrowse(code, deckId) {
           <span class="word-fr">${esc(c.fr)}</span>
           ${exampleHtml(c, lang)}
           ${c.note ? `<span class="note">${icon('lightbulb')} ${esc(c.note)}</span>` : ''}
+          ${deck.id === OWN_DECK ? `<button type="button" class="link small" data-remove="${esc(c.key)}">${icon('x')} Retirer ce mot</button>` : ''}
         </li>`;
       }).join('')}
     </ul>
   `);
   bindSpeak(app, code);
+  app.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+    const own = ownDeck(code);
+    const card = deck.cards.find((c) => c.key === b.dataset.remove);
+    if (!card || !confirm(`Retirer « ${card.term} » de tes mots ?`)) return;
+    own.cards = own.cards.filter((c) => c.key !== card.key);
+    delete store.progress[card.id];
+    if (!own.cards.length) store.customDecks[code] = store.customDecks[code].filter((d) => d.id !== OWN_DECK);
+    save();
+    viewBrowse(code, deckId);
+  }));
+}
+
+// ---------- Ajouter un mot ----------
+
+// Paquet « Mes mots » de la langue (créé au premier ajout).
+function ownDeck(code, create = false) {
+  const list = (store.customDecks[code] ||= []);
+  let deck = list.find((d) => d.id === OWN_DECK);
+  if (!deck && create) {
+    deck = { id: OWN_DECK, title: 'Mes mots', icon: 'pen', level: 'A1', hue: '#f4c76b', description: 'Les mots que tu as ajoutés toi-même.', cards: [] };
+    list.unshift(deck);
+  }
+  return deck;
+}
+
+async function viewAdd(code) {
+  setActiveTab('home');
+  const lang = getLanguage(code);
+  if (!lang) return go('#/');
+  setTheme('#f4c76b');
+  const { decks } = await loadLanguage(code);
+  const all = decks.flatMap((d) => d.cards);
+  const deckTitle = Object.fromEntries(decks.map((d) => [d.id, d.title]));
+  let side = 'target';
+
+  render(`
+    ${banner(interleave([code], [{ icon: 'plus', hue: '#f4c76b' }, { icon: 'book', hue: '#f4c76b' }]), { compact: true })}
+    ${pageHead({
+      back: { href: `#/lang/${code}`, label: lang.name },
+      eyebrow: 'Mes mots',
+      mark: icon('pen'),
+      title: 'Ajouter un mot',
+      lede: 'Lingua vérifie d’abord s’il existe déjà, puis te propose sa traduction.',
+    })}
+    <form id="add-form" class="add-form glass" autocomplete="off">
+      <div class="segmented" role="radiogroup" aria-label="Langue du mot">
+        <button type="button" role="radio" aria-checked="true" data-side="target">En ${lang.name.toLowerCase()}</button>
+        <button type="button" role="radio" aria-checked="false" data-side="fr">En français</button>
+      </div>
+      <input name="word" required maxlength="80" placeholder="Le mot ou l’expression…" ${langAttrs(lang)} autocapitalize="off" spellcheck="false">
+      <button class="btn primary full" type="submit">${icon('check')} Vérifier</button>
+    </form>
+    <section id="add-result" aria-live="polite"></section>
+  `);
+
+  const form = $id('add-form');
+  const result = $id('add-result');
+  form.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => {
+    side = b.dataset.side;
+    form.querySelectorAll('[data-side]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+    form.word.setAttribute('lang', side === 'fr' ? 'fr' : code);
+    form.word.setAttribute('dir', side === 'fr' ? 'ltr' : lang.dir);
+    form.word.focus();
+  }));
+  form.word.focus();
+
+  const cardHtml = (c) => {
+    const st = stateOf(c);
+    const status = store.boosted[c.id] && isNew(st) ? 'Dans tes mots du jour' : isNew(st) ? 'Pas encore appris' : isMature(st) ? 'Maîtrisé' : 'En cours';
+    return `
+      <div class="found glass" style="--rim:var(--gold)">
+        <div class="word-top">
+          <strong ${langAttrs(lang)}>${esc(c.term)}</strong>
+          ${speakBtn(c.term, 'small')}
+          <span class="chip">${status}</span>
+        </div>
+        ${c.translit ? `<span class="translit">${esc(c.translit)}</span>` : ''}
+        <span class="word-fr">${esc(c.fr)}</span>
+        <span class="muted small">Paquet : ${esc(deckTitle[c.deckId] || '')}</span>
+        ${store.boosted[c.id] && isNew(st)
+          ? ''
+          : `<button type="button" class="btn primary" data-boost="${esc(c.id)}">${icon('star')} ${isNew(st) ? 'L’apprendre aujourd’hui' : 'Le réviser aujourd’hui'}</button>`}
+      </div>`;
+  };
+
+  const check = (word) => {
+    const { exact, close } = findInBase(word, all, side);
+    if (exact.length) {
+      const own = exact.some((c) => c.deckId === OWN_DECK);
+      result.innerHTML = `
+        <p class="verdict ok">${icon('check')} ${own ? 'Tu as déjà ajouté ce mot' : 'Ce mot est déjà dans Lingua'}</p>
+        <p class="muted small">Traduction : <b class="gold">${esc(translationsFrom(exact, side).join(' · '))}</b></p>
+        ${exact.slice(0, 3).map(cardHtml).join('')}`;
+    } else {
+      result.innerHTML = `
+        ${close.length ? `
+          <p class="muted small">Pas trouvé tel quel. Tu voulais dire… ?</p>
+          <div class="suggest">${close.map((c) => `<button type="button" class="chip-btn glass" data-fill="${esc(side === 'fr' ? alternatives(c.fr)[0] : c.term)}">${esc(side === 'fr' ? c.fr : c.term)}</button>`).join('')}</div>` : ''}
+        <p class="verdict">${icon('sparkle')} Nouveau mot pour Lingua</p>
+        ${newWordForm(word)}`;
+      bindNewWord(word);
+    }
+    bindSpeak(result, code);
+    result.querySelectorAll('[data-boost]').forEach((b) => b.addEventListener('click', () => {
+      const c = all.find((x) => x.id === b.dataset.boost);
+      if (isNew(stateOf(c))) store.boosted[c.id] = today();
+      else store.progress[c.id] = { ...stateOf(c), due: Date.now() };
+      save();
+      toast(isNew(stateOf(c)) ? 'Ajouté à tes mots du jour' : 'Il sera révisé aujourd’hui');
+      b.replaceWith(Object.assign(document.createElement('a'), { className: 'btn', href: `#/session/${code}/all`, textContent: 'Lancer la séance du jour' }));
+    }));
+    result.querySelectorAll('[data-fill]').forEach((b) => b.addEventListener('click', () => {
+      form.word.value = b.dataset.fill;
+      check(form.word.value);
+    }));
+    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const newWordForm = (word) => {
+    const frSide = side === 'fr';
+    return `
+      <form id="new-word" class="add-form glass" autocomplete="off">
+        <label>${frSide ? `En ${lang.name.toLowerCase()}` : 'En français'}
+          <input name="translation" required maxlength="120" ${frSide ? langAttrs(lang) : 'lang="fr"'} placeholder="La traduction…">
+        </label>
+        <div class="online">
+          <button type="button" class="chip-btn glass" id="suggest">${icon('globe')} Proposer une traduction</button>
+          <p class="muted small">Le mot est envoyé au service gratuit MyMemory pour être traduit. Vérifie toujours la proposition.</p>
+          <div id="proposals" class="suggest"></div>
+        </div>
+        ${lang.code === 'ne' || lang.code === 'ar' ? `<label>Translittération (facultatif)<input name="translit" maxlength="120" lang="fr" placeholder="ex. namaste"></label>` : ''}
+        <label>Exemple (facultatif)<input name="example" maxlength="200" ${langAttrs(lang)} placeholder="Une phrase où tu l’as rencontré"></label>
+        <button class="btn primary full" type="submit">${icon('plus')} Ajouter à mes mots</button>
+      </form>`;
+  };
+
+  const bindNewWord = (word) => {
+    const f = $id('new-word');
+    let machine = false;
+    f.translation.addEventListener('input', () => { machine = false; });
+    $id('suggest').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const box = $id('proposals');
+      btn.disabled = true;
+      box.innerHTML = '<span class="muted small">Recherche…</span>';
+      try {
+        const from = side === 'fr' ? 'fr' : code;
+        const to = side === 'fr' ? code : 'fr';
+        const list = await translateOnline(word, from, to);
+        box.innerHTML = list.length
+          ? list.map((t) => `<button type="button" class="chip-btn glass" data-pick="${esc(t)}">${esc(t)}</button>`).join('')
+          : '<span class="muted small">Aucune proposition. Saisis la traduction toi-même.</span>';
+        box.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+          f.translation.value = b.dataset.pick;
+          machine = true;
+          box.querySelectorAll('[data-pick]').forEach((x) => x.classList.toggle('picked', x === b));
+        }));
+      } catch (err) {
+        box.innerHTML = `<span class="muted small">Impossible de traduire en ligne (${esc(err.message)}). Saisis la traduction toi-même.</span>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const translation = f.translation.value.trim();
+      if (!translation) return f.translation.focus();
+      const term = side === 'fr' ? translation : word.trim();
+      const fr = side === 'fr' ? word.trim() : translation;
+      // Dernière vérification : la traduction saisie existe-t-elle déjà ?
+      const dup = findInBase(term, all, 'target').exact.find((c) => normalize(c.fr) === normalize(fr));
+      if (dup) return toast('Ce mot existe déjà avec cette traduction.');
+      const translit = f.translit?.value.trim() || '';
+      const example = f.example.value.trim();
+      const notes = [machine ? 'Traduction automatique : à vérifier' : '', 'Ajouté par toi'].filter(Boolean).join(' · ');
+      ownDeck(code, true).cards.push({
+        key: `u${Date.now().toString(36)}`,
+        fr, term,
+        ...(translit ? { translit } : {}),
+        ...(example ? { example } : {}),
+        note: notes,
+        added: today(),
+      });
+      save();
+      result.innerHTML = `
+        <div class="step-done glass" style="--rim:var(--gold)">
+          <p class="kicker">${icon('check')} Ajouté à tes mots</p>
+          <strong ${langAttrs(lang)}>${esc(term)}</strong>
+          <span class="muted">${esc(fr)}</span>
+          <p class="muted small">Il fera partie de tes nouveaux mots du jour, en priorité.</p>
+          <div class="btn-row center">
+            <a class="btn primary" href="#/session/${code}/${OWN_DECK}?learn=1">L’apprendre maintenant</a>
+            <button type="button" class="btn" id="another">Ajouter un autre mot</button>
+          </div>
+        </div>`;
+      $id('another').addEventListener('click', () => viewAdd(code));
+      form.word.value = '';
+    });
+  };
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (form.word.value.trim()) check(form.word.value);
+  });
 }
 
 // ---------- Séance (révisions, nouveaux mots, quiz) ----------
@@ -612,15 +830,19 @@ function buildQueue(cards, code, deckOnly, opts, learn = false) {
   // Nouveautés dans l'ordre du parcours, en alternant alphabet et vocabulaire.
   // Depuis le parcours, on peut toujours découvrir quelques cartes de l'étape, même quota atteint.
   const limit = learn ? Math.max(newLeftToday(code), 8) : newLeftToday(code);
-  const letters = cards.filter((c) => c.script && isNew(stateOf(c)));
-  const others = cards.filter((c) => !c.script && isNew(stateOf(c)));
-  const fresh = [];
-  while (fresh.length < limit && (letters.length || others.length)) {
+  // Les mots ajoutés par l'utilisateur (ou mis en avant) passent en premier, hors quota (20 max par séance).
+  const mine = (c) => c.deckId === OWN_DECK || store.boosted[c.id];
+  const priority = cards.filter((c) => mine(c) && isNew(stateOf(c))).slice(0, 20);
+  const letters = cards.filter((c) => c.script && !mine(c) && isNew(stateOf(c)));
+  const others = cards.filter((c) => !c.script && !mine(c) && isNew(stateOf(c)));
+  const fresh = [...priority];
+  const freshLimit = limit + priority.length;
+  while (fresh.length < freshLimit && (letters.length || others.length)) {
     if (letters.length) fresh.push(letters.shift());
-    if (others.length && fresh.length < limit) fresh.push(others.shift());
+    if (others.length && fresh.length < freshLimit) fresh.push(others.shift());
   }
   let queue = due.map((card) => ({ card, kind: pickExercise(stateOf(card), card, opts) }));
-  // Les nouveaux mots arrivent intercalés entre les révisions.
+  // Les nouveaux mots arrivent intercalés entre les révisions (les mots choisis d'abord).
   fresh.forEach((card, i) => queue.splice(Math.min(queue.length, i * 2 + 1), 0, { card, kind: 'intro' }));
   if (!queue.length && deckOnly) {
     queue = cards.filter((c) => !isNew(stateOf(c)))
@@ -1429,6 +1651,7 @@ async function route() {
     if (view === 'lang') await viewLanguage(a);
     else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined, learn: params.has('learn') });
     else if (view === 'path') await viewPath(a);
+    else if (view === 'add') await viewAdd(a);
     else if (view === 'quiz') await viewSession(a, b || 'all', { quiz: true });
     else if (view === 'browse') await viewBrowse(a, b);
     else if (view === 'dialogue') await viewDialogue(a, b);
