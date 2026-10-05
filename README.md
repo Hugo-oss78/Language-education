@@ -5,17 +5,17 @@ anglais, espagnol, indonésien, népalais et arabe.
 
 - Fonctionne sur téléphone et ordinateur, **hors ligne** une fois ouverte.
 - Aucun compte : la progression reste **sur l’appareil** (export / import possible).
-- **834 cartes** (mots, lettres, phrases) en 51 paquets et **15 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
+- **1 069 cartes** (mots, lettres, phrases) en 68 paquets et **23 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
 
 | Langue | Paquets | Cartes | Remarque |
 |---|---|---|---|
-| Anglais | 11 | 188 | B1–B2 : conversation, collocations, faux amis, phrasal verbs, nuances, phrases |
-| Espagnol | 10 | 165 | A1–B2, variantes d’Amérique latine signalées |
-| Indonésien | 9 | 156 | A1–B1, grammaire en phrases |
-| Népalais | 11 | 174 | Alphabet devanagari + A1–B1, translittération · **à faire relire** |
-| Arabe | 10 | 151 | Alphabet + arabe standard (fuṣḥā), de droite à gauche · **à faire relire** |
+| Anglais | 15 | 246 | B1–B2 : conversation, voyage, faux amis, phrasal verbs, nuances, tournures |
+| Espagnol | 14 | 221 | A1–B2 : famille, maison, santé, récit au passé ; variantes d’Amérique latine signalées |
+| Indonésien | 12 | 198 | A1–B1 : famille, marché, phrases polies, grammaire en phrases |
+| Népalais | 14 | 213 | Alphabet devanagari + A1–B1 (santé, météo…), translittération · **à faire relire** |
+| Arabe | 13 | 191 | Alphabet + arabe standard (fuṣḥā), de droite à gauche · **à faire relire** |
 
-Chaque langue a aussi 3 **dialogues** (audio, traduction, questions de compréhension)
+Chaque langue a aussi 4 à 5 **dialogues** (audio, traduction, questions de compréhension)
 et un paquet **« Construire des phrases »** avec sa fiche de grammaire.
 
 ## Parcours
