@@ -25,6 +25,21 @@ Une unité regroupe 2 ou 3 thèmes et se termine par un **dialogue** qui sert d�
 Un thème est validé quand chaque carte a été réussie au moins une fois ; un dialogue, avec au moins 2 bonnes réponses sur 3.
 L’étape suivante est mise en avant, mais toutes restent ouvertes ; chaque unité a son quiz.
 
+## Mode Enfant (2–5 ans, anglais)
+
+Un espace séparé pour éveiller un tout-petit francophone à l’anglais, **avec un parent à côté** :
+
+- séances de 2 à 7 minutes : bonjour, découverte en contexte (« Look! A ball! »), « Where is the ball? », toucher l’image, « What’s this? » (facultatif), même mot sous une autre image, **mission dans la vraie vie**, au revoir ;
+- **jamais de correction négative** : après une erreur ou un silence, l’app montre et redit la bonne réponse ;
+- 20 premiers mots et 5 missions ; sept scores par mot (compréhension, production… suivis séparément) ; un mot n’est « acquis » qu’après des réussites sur plusieurs jours ;
+- pas de vies, de séries ni de chrono : juste un autocollant par séance ;
+- sortie protégée : appui long sur « Parent » puis un petit calcul ;
+- espace parent : conseil du jour, résumé de la semaine, mots compris / dits, missions, suppression complète du profil ;
+- données minimales (prénom ou surnom, mois de naissance), stockées sur l’appareil, séparément de la progression adulte. Ni photo, ni voix.
+
+Lingua ne peut pas évaluer le développement du langage : pour toute question, parlez-en à un professionnel de santé.
+Détails, architecture et plan V1 : [`docs/mode-enfant.md`](docs/mode-enfant.md).
+
 ## Ajouter ses propres mots
 
 Sur la page d’une langue, « Ajouter un mot » : on saisit un mot découvert (en français ou dans la langue).
@@ -119,8 +134,11 @@ js/translate.js       suggestion de traduction en ligne (MyMemory, sur demande)
 js/srs.js             répétition espacée
 js/text.js            correction des réponses, lecture CSV
 js/storage.js         sauvegarde locale
+js/kids/              Mode Enfant (moteur, stockage, écrans)
 js/icons.js           icônes et drapeaux (SVG)
-data/                 langues et paquets
+data/                 langues et paquets (data/kids : mots du Mode Enfant)
+css/kids.css          styles du Mode Enfant
+docs/                 documentation (Mode Enfant)
 fonts/                Fraunces + IBM Plex Sans (licence SIL OFL)
 icons/                icône de l’application
 sw.js                 mode hors ligne
