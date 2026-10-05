@@ -14,6 +14,7 @@ import {
   store, save, logReview, newCardsToday, streak, today, accuracy,
   exportJson, importJson, resetAll,
 } from './storage.js';
+import { isLocked as kidsLocked } from './kids/store.js';
 
 const app = document.getElementById('app');
 const langCache = {};
@@ -340,6 +341,11 @@ async function viewHome() {
           </span>
         </a>`).join('')}
     </section>
+    <a class="method-link glass kids-link" href="#/kids" style="--rim:#7fd1c7">
+      <span class="orb" style="--hue:#7fd1c7">${icon('users')}</span>
+      <span class="hero-body"><strong>Mode Enfant</strong><span class="muted small">Premiers mots d’anglais pour les 2–5 ans, avec un parent</span></span>
+      ${icon('arrow')}
+    </a>
     <a class="method-link glass" href="#/method" style="--rim:#c79bf2">
       <span class="orb" style="--hue:#c79bf2">${icon('lightbulb')}</span>
       <span class="hero-body"><strong>La méthode</strong><span class="muted small">Pourquoi Lingua te fait travailler comme ça</span></span>
@@ -1648,7 +1654,12 @@ async function route() {
   const [, view, a, b] = path.split('/');
   const params = new URLSearchParams(query);
   try {
-    if (view === 'lang') await viewLanguage(a);
+    // Mode enfant actif : on ne quitte ses écrans que par l'action parentale (appui long + calcul).
+    if (kidsLocked() && view !== 'kids') return go('#/kids/play');
+    if (view === 'kids') {
+      const { routeKids } = await import('./kids/ui.js');
+      cleanup = await routeKids(a, { app, setActiveTab, setTheme, toast });
+    } else if (view === 'lang') await viewLanguage(a);
     else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined, learn: params.has('learn') });
     else if (view === 'path') await viewPath(a);
     else if (view === 'add') await viewAdd(a);
