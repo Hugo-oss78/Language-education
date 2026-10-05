@@ -5,17 +5,17 @@ anglais, espagnol, indonésien, népalais et arabe.
 
 - Fonctionne sur téléphone et ordinateur, **hors ligne** une fois ouverte.
 - Aucun compte : la progression reste **sur l’appareil** (export / import possible).
-- **1 069 cartes** (mots, lettres, phrases) en 68 paquets et **23 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
+- **1 233 cartes** (mots, lettres, phrases) en 78 paquets et **28 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
 
 | Langue | Paquets | Cartes | Remarque |
 |---|---|---|---|
-| Anglais | 15 | 246 | B1–B2 : conversation, voyage, faux amis, phrasal verbs, nuances, tournures |
-| Espagnol | 14 | 221 | A1–B2 : famille, maison, santé, récit au passé ; variantes d’Amérique latine signalées |
-| Indonésien | 12 | 198 | A1–B1 : famille, marché, phrases polies, grammaire en phrases |
-| Népalais | 14 | 213 | Alphabet devanagari + A1–B1 (santé, météo…), translittération · **à faire relire** |
-| Arabe | 13 | 191 | Alphabet + arabe standard (fuṣḥā), de droite à gauche · **à faire relire** |
+| Anglais | 17 | 283 | B1–B2 : conversation, voyage, montagne, plongée, faux amis, phrasal verbs, tournures |
+| Espagnol | 16 | 255 | A1–B2 : famille, maison, santé, montagne, mer & plongée, récit au passé |
+| Indonésien | 14 | 230 | A1–B1 : famille, marché, volcans, mer & plongée, phrases polies |
+| Népalais | 16 | 243 | Alphabet devanagari + A1–B1 (santé, trek, lacs & rivières…) · **à faire relire** |
+| Arabe | 15 | 222 | Alphabet + arabe standard (montagne & désert, mer & plongée…) · **à faire relire** |
 
-Chaque langue a aussi 4 à 5 **dialogues** (audio, traduction, questions de compréhension)
+Chaque langue a aussi 5 à 6 **dialogues** (audio, traduction, questions de compréhension)
 et un paquet **« Construire des phrases »** avec sa fiche de grammaire.
 
 ## Parcours

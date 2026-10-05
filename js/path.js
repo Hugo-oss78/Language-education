@@ -23,7 +23,8 @@ export function buildPath(decks, dialogues = []) {
       ...decks.filter((d) => d.level === level && d.type === 'sentences'),
     ];
     const talks = dialogues.filter((x) => x.level === level);
-    const chunks = Math.max(Math.ceil(themes.length / PER_UNIT), talks.length ? 1 : 0);
+    // Au plus 2 dialogues par unité : on ajoute des unités si un niveau en compte beaucoup.
+    const chunks = Math.max(Math.ceil(themes.length / PER_UNIT), Math.ceil(talks.length / 2));
     // Répartition équilibrée (7 thèmes → 3 + 2 + 2) ; les dialogues ferment les dernières unités du niveau.
     const base = Math.floor(themes.length / chunks);
     const extra = themes.length % chunks;
