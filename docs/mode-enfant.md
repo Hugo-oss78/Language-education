@@ -2,6 +2,21 @@
 
 Ce document répond aux 10 points demandés avant l’implémentation. Il décrit aussi ce que contient le MVP (phase 3).
 
+## Langues
+
+Le Mode Enfant existe en **anglais, espagnol, indonésien, népalais et arabe**. Le profil indique la langue apprise ;
+on en change depuis l’espace parent, et chaque langue garde sa propre progression (mots, missions, historique).
+
+| Langue | Choix faits | Relecture |
+|---|---|---|
+| Anglais | Britannique (« Mummy », voix en-GB) | — |
+| Espagnol | D’Espagne (« coche », « plátano ») ; « a » personnel avec « toca » (« toca al perro ») | — |
+| Indonésien | Langue parlée : « Mana bolanya? », « Ayah / Ibu », « Dadah! » | Conseillée (« bak mandi », « kasur ») |
+| Népalais | Registre familier adressé à l’enfant, forme respectueuse pour papa et maman (« बुबा कहाँ हुनुहुन्छ? ») | **Obligatoire** |
+| Arabe | Arabe standard simplifié, impératifs au masculin (forme neutre d’usage) ; beaucoup de familles parlent un dialecte à la maison | **Obligatoire** |
+
+Pour ajouter une langue : un fichier `data/kids/<code>.js` (mots, phrases, missions) ; les tests vérifient qu’il ne manque rien.
+
 ## 1. Architecture actuelle
 
 - **PWA sans framework** : HTML, CSS et JavaScript en modules ES. Pas de build ni de dépendance au moment de l’exécution.
@@ -32,7 +47,9 @@ Aucune fonctionnalité adulte n’a été supprimée ou modifiée.
 
 | Fichier | Rôle |
 |---|---|
-| `data/kids/en.js` | 20 mots (niveau 1), 6 catégories, 5 missions, phrases modèles |
+| `data/kids/words.js` | Base commune : 20 mots (images, catégories, sens en français), 5 missions |
+| `data/kids/{en,es,id,ne,ar}.js` | Mots, phrases modèles et phrase de mission de chaque langue |
+| `js/kids/content.js` | Assemble la base et la langue apprise |
 | `js/kids/engine.js` | Moteur **pur** : construction de séance, 7 scores par mot, répétition espacée enfant, adaptation, conseils, résumé de la semaine |
 | `js/kids/store.js` | Stockage séparé (`lingua.kids.v1`), profils, suppression complète, verrou |
 | `js/kids/ui.js` | Écrans : création du profil, espace parent, accueil enfant, séance, porte parentale |
@@ -77,7 +94,7 @@ app.js (routeur) ──► #/kids/…  ──► import('./kids/ui.js') ──�
       │                                   │
       └─ si verrouillé : tout renvoie     ├─ engine.js (pur, testé)
          vers #/kids/play                 ├─ store.js (stockage séparé)
-                                          └─ data/kids/en.js
+                                          ├─ content.js ─► data/kids/words.js + data/kids/<langue>.js
 ```
 
 ### Écrans
@@ -127,7 +144,7 @@ Le verrou survit au rechargement de la page.
 
 Il n’y a **aucune nouvelle dépendance**. Le Mode Enfant utilise uniquement :
 
-- la synthèse vocale du navigateur (anglais britannique, plus lente et un peu plus aiguë) ;
+- la synthèse vocale du navigateur (voix de la langue apprise, plus lente et un peu plus aiguë) ;
 - les emoji du système comme images.
 
 ## 7. Coûts des API
@@ -148,7 +165,7 @@ Pour la V1, les options et leur coût :
 
 | Risque | Ce qui est fait |
 |---|---|
-| Pas de voix anglaise sur l’appareil, ou synthèse muette | Le texte reste affiché en grand pour que le parent puisse lire, et un minuteur de secours fait avancer la séance |
+| Pas de voix pour la langue sur l’appareil (fréquent pour le népalais), ou synthèse muette | Le texte reste affiché en grand avec sa transcription, l’espace parent prévient, et un minuteur de secours fait avancer la séance |
 | iOS exige un geste avant la première parole | La séance démarre toujours par un appui (bouton ▶) |
 | Les emoji changent selon l’appareil, et papa ou maman ne ressemblent pas aux vrais parents | Les missions dans la vraie vie servent justement à faire le lien ; les photos des parents (« Mon Monde ») sont prévues en V1 |
 | La reconnaissance vocale comprend mal les enfants de 2 à 3 ans (prononciation en construction) | MVP : c’est le parent qui juge ; V1 : la reconnaissance restera optionnelle et ne pénalisera jamais l’enfant |

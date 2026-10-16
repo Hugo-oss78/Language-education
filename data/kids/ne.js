@@ -1,0 +1,53 @@
+// Mode Enfant · népalais (registre familier, tutoiement « तिमी » adressé à l'enfant).
+// ⚠️ À faire relire par un locuteur natif. translit : transcription simplifiée pour le parent.
+// hon : personne à qui l'on parle avec respect (« कहाँ हुनुहुन्छ » au lieu de « कहाँ छ »).
+
+export default {
+  code: 'ne',
+  reviewNeeded: true,
+  words: {
+    ball: { word: 'बल', translit: 'bal' },
+    dog: { word: 'कुकुर', translit: 'kukur' },
+    cat: { word: 'बिरालो', translit: 'biraalo' },
+    car: { word: 'गाडी', translit: 'gaadi' },
+    duck: { word: 'हाँस', translit: 'haans' },
+    teddy: { word: 'भालु', translit: 'bhaalu' },
+    apple: { word: 'स्याउ', translit: 'syaau' },
+    banana: { word: 'केरा', translit: 'keraa' },
+    milk: { word: 'दूध', translit: 'doodh', mass: true },
+    shoe: { word: 'जुत्ता', translit: 'juttaa' },
+    book: { word: 'किताब', translit: 'kitaab' },
+    fish: { word: 'माछा', translit: 'maachhaa' },
+    bird: { word: 'चरा', translit: 'charaa' },
+    baby: { word: 'बच्चा', translit: 'bachchaa' },
+    cup: { word: 'कप', translit: 'kap' },
+    water: { word: 'पानी', translit: 'paani', mass: true },
+    bed: { word: 'ओछ्यान', translit: 'ochhyaan' },
+    bath: { word: 'नुहाउने', translit: 'nuhaaune' },
+    daddy: { word: 'बुबा', translit: 'bubaa', hon: true },
+    mummy: { word: 'आमा', translit: 'aamaa', hon: true },
+  },
+  missions: {
+    'find-ball': 'तिम्रो बल कहाँ छ?',
+    'find-shoes': 'तिम्रो जुत्ता कहाँ छ?',
+    'where-daddy': 'बुबा कहाँ हुनुहुन्छ?',
+    'find-teddy': 'भालु कहाँ छ?',
+    'find-cup': 'तिम्रो कप कहाँ छ?',
+  },
+  phrases: {
+    hello: (name) => `नमस्ते, ${name}!`,
+    look: (w) => `हेर! ${w.word}!`,
+    name: (w) => `${w.word}!`,
+    where: (w) => `${w.word} कहाँ ${w.hon ? 'हुनुहुन्छ' : 'छ'}?`,
+    yes: (w) => `हो! ${w.word}!`,
+    here: (w) => `यहाँ ${w.hon ? 'हुनुहुन्छ' : 'छ'} ${w.word}!`,
+    thatIs: (w) => `त्यो ${w.word} हो।`,
+    touch: (w) => `${w.word} छोऊ!`,
+    whats: (w) => (w.person ? 'यो को हो?' : 'यो के हो?'),
+    another: (w) => (w.mass ? `हेर! फेरि ${w.word}!` : `हेर! अर्को ${w.word}!`),
+    count: ['एक!', 'दुई!', 'तीन!'],
+    great: () => 'स्याबास!',
+    greatJob: () => 'हो! स्याबास!',
+    bye: (name) => `स्याबास! टाटा, ${name}!`,
+  },
+};

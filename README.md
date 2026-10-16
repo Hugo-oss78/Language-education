@@ -25,13 +25,13 @@ Une unité regroupe 2 ou 3 thèmes et se termine par un **dialogue** qui sert d�
 Un thème est validé quand chaque carte a été réussie au moins une fois ; un dialogue, avec au moins 2 bonnes réponses sur 3.
 L’étape suivante est mise en avant, mais toutes restent ouvertes ; chaque unité a son quiz.
 
-## Mode Enfant (2–5 ans, anglais)
+## Mode Enfant (2–5 ans, 5 langues)
 
-Un espace séparé pour éveiller un tout-petit francophone à l’anglais, **avec un parent à côté** :
+Un espace séparé pour éveiller un tout-petit francophone à l’anglais, l’espagnol, l’indonésien, le népalais ou l’arabe, **avec un parent à côté** :
 
 - séances de 2 à 7 minutes : bonjour, découverte en contexte (« Look! A ball! »), « Where is the ball? », toucher l’image, « What’s this? » (facultatif), même mot sous une autre image, **mission dans la vraie vie**, au revoir ;
 - **jamais de correction négative** : après une erreur ou un silence, l’app montre et redit la bonne réponse ;
-- 20 premiers mots et 5 missions ; sept scores par mot (compréhension, production… suivis séparément) ; un mot n’est « acquis » qu’après des réussites sur plusieurs jours ;
+- 20 premiers mots et 5 missions dans chaque langue (népalais et arabe **à faire relire**, avec transcription pour le parent) ; la progression est gardée séparément pour chaque langue ; sept scores par mot (compréhension, production… suivis séparément) ; un mot n’est « acquis » qu’après des réussites sur plusieurs jours ;
 - pas de vies, de séries ni de chrono : juste un autocollant par séance ;
 - sortie protégée : appui long sur « Parent » puis un petit calcul ;
 - espace parent : conseil du jour, résumé de la semaine, mots compris / dits, missions, suppression complète du profil ;

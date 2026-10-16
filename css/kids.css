@@ -137,3 +137,15 @@ body.kids-mode .container { max-width: 760px; }
 @media (max-width: 380px) {
   .kid-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Plusieurs langues */
+.kid-langs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.kid-langs .chip-btn { flex: 0 1 auto; padding: 8px 12px; gap: 6px; }
+.kid-langs .lang-flag.sm, .lang-pick .lang-flag.sm { width: 22px; display: inline-block; }
+.lang-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.lang-pick input { position: absolute; opacity: 0; pointer-events: none; }
+.lang-pick label > span { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 99px; background: rgb(255 255 255 / 6%); cursor: pointer; }
+.lang-pick input:checked + span { box-shadow: inset 0 0 0 2px var(--gold), 0 0 16px rgb(244 199 107 / 30%); }
+.lang-pick input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
+.kid-translit { margin: -10px 0 0; font-size: 1rem; color: rgb(36 50 74 / 60%); }
+.kids [lang="ne"].kid-big-text, .kids [lang="ar"].kid-big-text { font-family: var(--script); }

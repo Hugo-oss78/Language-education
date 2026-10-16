@@ -1,22 +1,27 @@
 // Mode Enfant : écrans (espace parent, accueil enfant, séance, porte parentale).
 // Module isolé : il ne lit ni n'écrit la progression adulte. app.js lui délègue les routes #/kids/…
 
-import { WORDS, MISSIONS, PHRASES, CATEGORIES } from '../../data/kids/en.js';
+import { CATEGORIES, KIDS_LANGS, loadKidsContent } from './content.js';
+import { getLanguage } from '../../data/languages.js';
 import {
   buildSession, applyOutcome, wordStatus, STATUS_LABELS, ageInMonths, tipOfTheDay, weeklySummary,
 } from './engine.js';
 import {
   kids, commit, activeProfile, setLocked, addProfile, updateProfile, removeProfile, recordSession,
+  langProgress, langMissions, setLangData,
 } from './store.js';
-import { icon } from '../icons.js';
+import { icon, flag } from '../icons.js';
 
 const AVATARS = ['🦊', '🐻', '🐰', '🐼', '🦁', '🐸', '🐯', '🐨'];
 const STICKERS = ['🌼', '🌻', '🌷', '🍄', '🐞', '🦋', '🐝', '🌈', '⭐', '🐌', '🌳', '🐿️', '🐢', '🌙', '🍓', '🐬'];
-const WORD = Object.fromEntries(WORDS.map((w) => [w.id, w]));
-const MISSION = Object.fromEntries(MISSIONS.map((m) => [m.id, m]));
 const KID_HUE = '#7fd1c7';
 
 let ctx = null; // { app, setActiveTab, setTheme, toast }
+let C = null; // contenu de la langue apprise (voir content.js)
+
+const langName = (code) => getLanguage(code)?.name.toLowerCase() || code;
+// Attributs pour afficher correctement le texte de la langue (népalais, arabe de droite à gauche).
+const textAttrs = () => `lang="${C.code}" dir="${getLanguage(C.code)?.dir || 'ltr'}"`;
 
 function esc(text = '') {
   return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,14 +38,20 @@ function go(hash) {
   else location.hash = hash;
 }
 
-// ---------- Voix : anglais, plus lent et un peu plus aigu pour les petits ----------
+// ---------- Voix de la langue apprise, plus lente et un peu plus aiguë pour les petits ----------
 
-function englishVoice() {
-  let list = [];
-  try { list = window.speechSynthesis?.getVoices() || []; } catch { list = []; }
-  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
-  return list.find((v) => norm(v) === 'en-gb') || list.find((v) => norm(v).startsWith('en'));
+function allVoices() {
+  try { return window.speechSynthesis?.getVoices() || []; } catch { return []; }
 }
+
+function voiceFor(tts) {
+  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
+  const base = tts.split('-')[0];
+  const list = allVoices();
+  return list.find((v) => norm(v) === tts.toLowerCase()) || list.find((v) => norm(v).startsWith(base));
+}
+
+const ttsCode = () => getLanguage(C?.code || 'en')?.tts || 'en-GB';
 
 // Lit une phrase ; onend est toujours appelé (même sans voix ou si le navigateur ne signale pas la fin).
 function say(text, onend) {
@@ -55,8 +66,8 @@ function say(text, onend) {
   try {
     if (!('speechSynthesis' in window)) throw new Error('pas de synthèse vocale');
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'en-GB';
-    const v = englishVoice();
+    u.lang = ttsCode();
+    const v = voiceFor(u.lang);
     if (v) u.voice = v;
     u.rate = 0.8;
     u.pitch = 1.15;
@@ -84,6 +95,11 @@ function sayAll(texts, onend) {
   return () => { stopped = true; clearTimeout(pause); stop?.(); };
 }
 
+// Pour le parent : la transcription du mot quand la langue s'écrit avec un autre alphabet.
+function translitLine(w) {
+  return w.translit ? `<p class="kid-translit">${esc(w.word)} · ${esc(w.translit)}</p>` : '';
+}
+
 // ---------- Routes ----------
 
 // Renvoie une fonction de nettoyage (appelée par app.js au changement de page).
@@ -97,6 +113,7 @@ export async function routeKids(sub, helpers) {
     go('#/kids/play');
     return null;
   }
+  C = await loadKidsContent(profile?.target || 'en');
   if (!profile && sub !== 'new') return viewSetup();
   if (sub === 'new') return viewSetup();
   if (sub === 'edit') return viewSetup(profile);
@@ -110,12 +127,12 @@ export async function routeKids(sub, helpers) {
 function viewSetup(profile = null) {
   ctx.setActiveTab('home');
   ctx.setTheme(KID_HUE);
-  const p = profile || { name: '', avatar: AVATARS[0], birth: '', interests: [], sessionMinutes: 3 };
+  const p = profile || { name: '', avatar: AVATARS[0], birth: '', interests: [], sessionMinutes: 3, target: 'en' };
   const hasProfiles = kids().profiles.length > 0;
   render(`
     <header class="page-head kids-head">
       <a class="back" href="${hasProfiles ? '#/kids' : '#/'}">${icon('back')} ${hasProfiles ? 'Espace parent' : 'Accueil'}</a>
-      <p class="eyebrow">Mode Enfant · anglais</p>
+      <p class="eyebrow">Mode Enfant</p>
       <h1>${profile ? 'Modifier le profil' : 'Créer le profil de l’enfant'}</h1>
       <p class="lede muted">Juste ce qu’il faut pour adapter les séances. Tout reste sur cet appareil.</p>
     </header>
@@ -129,6 +146,13 @@ function viewSetup(profile = null) {
           ${AVATARS.map((a) => `<label><input type="radio" name="avatar" value="${a}" ${a === p.avatar ? 'checked' : ''}><span>${a}</span></label>`).join('')}
         </div>
       </fieldset>
+      <fieldset>
+        <legend>Langue à découvrir</legend>
+        <div class="lang-pick">
+          ${KIDS_LANGS.map((code) => `<label><input type="radio" name="target" value="${code}" ${code === (p.target || 'en') ? 'checked' : ''}><span><span class="lang-flag sm">${flag(code)}</span>${getLanguage(code).name}${['ne', 'ar'].includes(code) ? ' <small class="muted">à faire relire</small>' : ''}</span></label>`).join('')}
+        </div>
+        ${profile ? '<small class="muted">Changer de langue garde la progression de chaque langue.</small>' : ''}
+      </fieldset>
       <label class="stack">Mois de naissance <small class="muted">pour adapter la difficulté (facultatif)</small>
         <input type="month" name="birth" value="${esc(p.birth || '')}">
       </label>
@@ -141,7 +165,7 @@ function viewSetup(profile = null) {
       <label class="stack">Durée d’une séance : <b id="minutes-out">${p.sessionMinutes} min</b>
         <input type="range" name="sessionMinutes" min="2" max="7" step="1" value="${p.sessionMinutes}">
       </label>
-      <p class="muted small">Langue maternelle : français · langue apprise : anglais.
+      <p class="muted small">Langue maternelle : français.
         Aucune photo, aucun enregistrement de la voix, aucun nom de famille.</p>
       <button class="btn primary full" type="submit">${profile ? 'Enregistrer' : 'Créer le profil'}</button>
     </form>
@@ -158,6 +182,7 @@ function viewSetup(profile = null) {
       birth: form.birth.value || null,
       interests: [...form.querySelectorAll('[name="interests"]:checked')].map((i) => i.value),
       sessionMinutes: form.sessionMinutes.value,
+      target: form.querySelector('[name="target"]:checked')?.value || 'en',
     };
     if (!fields.name.trim()) return ctx.toast('Indique un prénom ou un surnom');
     commit(profile ? updateProfile(kids(), profile.id, fields) : addProfile(kids(), fields));
@@ -168,6 +193,12 @@ function viewSetup(profile = null) {
 }
 
 // ---------- Espace parent ----------
+
+// « l’anglais », « le népalais »…
+function withArticle(code) {
+  const name = langName(code);
+  return /^[aeiouyéèh]/i.test(name) ? `l’${name}` : `le ${name}`;
+}
 
 function ageText(months) {
   if (months === null || months < 0) return '';
@@ -185,12 +216,12 @@ function viewParent(profile) {
   ctx.setActiveTab('home');
   ctx.setTheme(KID_HUE);
   const d = kids();
-  const progress = d.progress[profile.id] || {};
-  const missionLog = d.missions[profile.id] || {};
-  const history = d.history[profile.id] || [];
-  const week = weeklySummary(history, progress, WORDS);
+  const progress = langProgress(d, profile.id, C.code);
+  const missionLog = langMissions(d, profile.id, C.code);
+  const history = (d.history[profile.id] || []).filter((h) => (h.lang || 'en') === C.code);
+  const week = weeklySummary(history, progress, C.words);
   const age = ageInMonths(profile.birth);
-  const seen = WORDS.filter((w) => progress[w.id]?.seen);
+  const seen = C.words.filter((w) => progress[w.id]?.seen);
   const by = (st) => seen.filter((w) => wordStatus(progress[w.id]) === st).length;
   const stickers = d.stickers[profile.id] || [];
 
@@ -199,8 +230,14 @@ function viewParent(profile) {
       <a class="back" href="#/">${icon('back')} Accueil</a>
       <p class="eyebrow">Mode Enfant · espace parent</p>
       <h1><span class="kid-avatar sm">${profile.avatar}</span> ${esc(profile.name)}</h1>
-      <p class="lede muted">${[ageText(age), 'apprend l’anglais', `séances de ${profile.sessionMinutes} min`].filter(Boolean).join(' · ')}</p>
+      <p class="lede muted">${[ageText(age), `apprend ${withArticle(C.code)}`, `séances de ${profile.sessionMinutes} min`].filter(Boolean).join(' · ')}</p>
     </header>
+
+    <div class="kid-langs" role="group" aria-label="Langue apprise">
+      ${KIDS_LANGS.map((code) => `<button class="chip-btn glass" data-lang="${code}" aria-pressed="${code === C.code}"><span class="lang-flag sm">${flag(code)}</span>${getLanguage(code).name}</button>`).join('')}
+    </div>
+    ${C.reviewNeeded ? `<p class="notice">${icon('lightbulb')}<span>Les mots et phrases en ${langName(C.code)} pour les enfants sont <b>à faire relire</b> par un locuteur natif. N’hésitez pas à les dire à votre façon.</span></p>` : ''}
+    ${allVoices().length && !voiceFor(ttsCode()) ? `<p class="notice">${icon('speaker')}<span>Pas de voix pour ${withArticle(C.code)} sur cet appareil : la prononciation sera fausse ou absente. Lisez les mots à voix haute à votre enfant (la transcription est affichée).</span></p>` : ''}
 
     <button class="btn primary full kid-start" id="start">${icon('star')} Lancer le mode enfant</button>
     <p class="muted small center">Pour en sortir : appui long sur le bouton « Parent » en haut de l’écran, puis un petit calcul.</p>
@@ -217,9 +254,9 @@ function viewParent(profile) {
       <div class="glass"><strong>${week.newWords.length}</strong><span class="muted small">nouveaux mots</span></div>
       <div class="glass"><strong>${week.missions.length}</strong><span class="muted small">missions</span></div>
     </section>
-    ${week.newWords.length ? `<p class="muted small">Mots découverts : ${week.newWords.map((id) => `${WORD[id].emoji[0]} ${esc(WORD[id].word)}`).join(', ')}.</p>` : ''}
+    ${week.newWords.length ? `<p class="muted small">Mots découverts : ${week.newWords.map((id) => `${C.byId[id].emoji[0]} ${esc(C.byId[id].word)}`).join(', ')}.</p>` : ''}
 
-    <h2 class="section-title">Ses mots <span class="muted small">${seen.length}/${WORDS.length}</span></h2>
+    <h2 class="section-title">Ses mots <span class="muted small">${seen.length}/${C.words.length}</span></h2>
     ${seen.length ? `
       <p class="muted small">${by('discovering')} en découverte · ${by('understood')} compris · ${by('acquired')} acquis.
         « Comprend » et « Dit » sont suivis séparément : il est normal de comprendre bien avant de dire.</p>
@@ -230,7 +267,7 @@ function viewParent(profile) {
           return `<li>
             <span class="kid-emoji">${w.emoji[0]}</span>
             <span class="kid-word">
-              <span><strong>${esc(w.word)}</strong> <span class="muted small">${esc(w.fr)}</span></span>
+              <span><strong ${textAttrs()}>${esc(w.word)}</strong>${w.translit ? ` <span class="small">${esc(w.translit)}</span>` : ''} <span class="muted small">${esc(w.fr)}</span></span>
               <span class="kid-bars"><span class="small muted">Comprend</span>${bar(s.comp, 'comp')}<span class="small muted">Dit</span>${bar(s.prod, 'prod')}</span>
             </span>
             <span class="kid-side">
@@ -245,13 +282,13 @@ function viewParent(profile) {
     <h2 class="section-title">Missions dans la vraie vie</h2>
     <p class="muted small">À faire ensemble, hors de l’écran : c’est là que le mot devient vraiment le sien.</p>
     <ul class="kid-missions">
-      ${MISSIONS.map((m) => {
+      ${C.missions.map((m) => {
         const log = missionLog[m.id];
         const ready = m.words.some((id) => progress[id]?.seen);
         return `<li class="glass ${ready ? '' : 'locked'}">
           <span class="kid-emoji">${m.emoji}</span>
           <div>
-            <strong>${esc(m.title)}</strong> <span class="muted small">« ${esc(m.en)} »</span>
+            <strong>${esc(m.title)}</strong> <span class="muted small" ${textAttrs()}>« ${esc(m.say)} »</span>
             <p class="small muted">${esc(m.parent)}</p>
             <p class="small">${log?.done ? `Faite ${log.done} fois` : ready ? 'Pas encore faite' : 'Après la découverte du mot en séance'}</p>
           </div>
@@ -274,7 +311,7 @@ function viewParent(profile) {
       <p><strong>Vie privée.</strong> Les données de l’enfant (prénom, mois de naissance, progression) restent sur cet appareil,
         séparées de votre progression. Pas de photo, pas d’enregistrement de la voix, pas de publicité ni d’achat.
         « Supprimer ce profil » efface tout ce qui le concerne.</p>
-      <p><strong>Important.</strong> Lingua est un jeu d’éveil à l’anglais : il ne peut pas évaluer le développement du langage,
+      <p><strong>Important.</strong> Lingua est un jeu d’éveil aux langues : il ne peut pas évaluer le développement du langage,
         l’audition ou les apprentissages. Pour toute question à ce sujet, parlez-en à un professionnel de santé
         (médecin, pédiatre, orthophoniste).</p>
     </section>
@@ -285,6 +322,11 @@ function viewParent(profile) {
     setLocked(true);
     go('#/kids/play');
   });
+  root.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.lang === C.code) return;
+    commit(updateProfile(kids(), profile.id, { target: b.dataset.lang }));
+    go('#/kids');
+  }));
   root.querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', () => say(b.dataset.say)));
   root.querySelectorAll('[data-spont]').forEach((b) => b.addEventListener('click', () => {
     updateWord(profile.id, b.dataset.spont, 'spontaneous', 'said');
@@ -311,18 +353,18 @@ function viewParent(profile) {
 
 function updateWord(profileId, wordId, activity, result) {
   const d = kids();
-  const prog = { ...(d.progress[profileId] || {}) };
+  const prog = { ...langProgress(d, profileId, C.code) };
   prog[wordId] = applyOutcome(prog[wordId], activity, result);
-  commit({ ...d, progress: { ...d.progress, [profileId]: prog } });
+  commit(setLangData(d, 'progress', profileId, C.code, prog));
 }
 
 function markMission(profileId, missionId) {
   const d = kids();
-  const log = { ...(d.missions[profileId] || {}) };
+  const log = { ...langMissions(d, profileId, C.code) };
   log[missionId] = { done: (log[missionId]?.done || 0) + 1, last: Date.now() };
-  commit({ ...d, missions: { ...d.missions, [profileId]: log } });
-  const prog = d.progress[profileId] || {};
-  for (const id of MISSION[missionId].words) if (prog[id]?.seen) updateWord(profileId, id, 'mission', 'done');
+  commit(setLangData(d, 'missions', profileId, C.code, log));
+  const prog = langProgress(d, profileId, C.code);
+  for (const id of C.missionById[missionId].words) if (prog[id]?.seen) updateWord(profileId, id, 'mission', 'done');
 }
 
 // ---------- Porte parentale : appui long puis petit calcul ----------
@@ -412,7 +454,7 @@ function viewPlay(profile) {
       <div class="kid-top">${parentButton()}</div>
       <button class="kid-hello" id="hello" aria-label="Dire bonjour">
         <span class="kid-avatar">${profile.avatar}</span>
-        <span class="kid-big-text">${esc(PHRASES.hello(profile.name))}</span>
+        <span class="kid-big-text" ${textAttrs()}>${esc(C.phrases.hello(profile.name))}</span>
       </button>
       <button class="kid-play" id="play" aria-label="Jouer">▶</button>
       ${stickers.length ? `<p class="kid-garden" aria-label="Mon petit monde">${stickers.slice(-12).join(' ')}</p>` : ''}
@@ -420,7 +462,7 @@ function viewPlay(profile) {
   `);
   let stopSpeech = null;
   const stopGate = bindParentGate(() => stopSpeech?.());
-  ctx.app.querySelector('#hello').addEventListener('click', () => { stopSpeech?.(); stopSpeech = say(PHRASES.hello(profile.name)); });
+  ctx.app.querySelector('#hello').addEventListener('click', () => { stopSpeech?.(); stopSpeech = say(C.phrases.hello(profile.name)); });
   ctx.app.querySelector('#play').addEventListener('click', () => go('#/kids/session'));
   return () => { stopSpeech?.(); stopGate(); leaveKidsMode(); };
 }
@@ -432,10 +474,10 @@ function viewSession(profile) {
   const d = kids();
   const steps = buildSession({
     profile,
-    words: WORDS,
-    progress: d.progress[profile.id] || {},
-    missions: MISSIONS,
-    missionLog: d.missions[profile.id] || {},
+    words: C.words,
+    progress: langProgress(d, profile.id, C.code),
+    missions: C.missions,
+    missionLog: langMissions(d, profile.id, C.code),
   });
   const started = Date.now();
   const practiced = new Set();
@@ -498,23 +540,23 @@ function viewSession(profile) {
   function show() {
     const step = steps[index];
     if (!step) return;
-    const w = WORD[step.word];
+    const w = C.byId[step.word];
     if (step.type === 'hello') return showHello();
     if (step.type === 'discover') return showDiscover(w);
     if (step.type === 'find' || step.type === 'generalize') return showFind(step, w);
     if (step.type === 'touch') return showTouch(w);
     if (step.type === 'say') return showSay(w);
-    if (step.type === 'mission') return showMission(MISSION[step.mission]);
+    if (step.type === 'mission') return showMission(C.missionById[step.mission]);
     if (step.type === 'bye') return showBye();
     return next();
   }
 
   function showHello() {
-    prompt = [PHRASES.hello(profile.name)];
+    prompt = [C.phrases.hello(profile.name)];
     frame(`
       <div class="kid-stage">
         <button class="kid-card" id="hi"><span class="kid-avatar">${profile.avatar}</span></button>
-        <p class="kid-big-text">${esc(prompt[0])}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(prompt[0])}</p>
       </div>
       ${nextButton()}`);
     bindNext();
@@ -524,17 +566,18 @@ function viewSession(profile) {
 
   // Découverte : le contexte d'abord (« Look! A ball! »), puis le mot seul.
   function showDiscover(w) {
-    prompt = [PHRASES.look(w), PHRASES.name(w)];
+    prompt = [C.phrases.look(w), C.phrases.name(w)];
     record(w.id, 'discover', 'exposure');
     frame(`
       <div class="kid-stage">
         <button class="kid-card huge" id="pic" aria-label="${esc(w.word)}">${w.emoji[0]}</button>
-        <p class="kid-big-text">${esc(PHRASES.name(w))}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(C.phrases.name(w))}</p>
+        ${translitLine(w)}
       </div>
       ${nextButton()}`);
     bindNext();
     const pic = ctx.app.querySelector('#pic');
-    pic.addEventListener('click', () => { bounce(pic); speakNow([PHRASES.name(w)]); });
+    pic.addEventListener('click', () => { bounce(pic); speakNow([C.phrases.name(w)]); });
     speakNow(prompt, () => bounce(pic));
   }
 
@@ -542,23 +585,24 @@ function viewSession(profile) {
   function showFind(step, w) {
     const general = step.type === 'generalize';
     const activity = general ? 'generalize' : 'find';
-    const where = PHRASES.where(w);
-    prompt = general ? [PHRASES.another(w), where] : [where];
+    const where = C.phrases.where(w);
+    prompt = general ? [C.phrases.another(w), where] : [where];
     let helped = false;
     let silent = false;
     let finished = false;
-    const picture = (id) => (id === w.id && general ? w.emoji[step.variant] || w.emoji[0] : WORD[id].emoji[0]);
+    const picture = (id) => (id === w.id && general ? w.emoji[step.variant] || w.emoji[0] : C.byId[id].emoji[0]);
     frame(`
       <div class="kid-stage">
-        <p class="kid-big-text">${esc(where)}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(where)}</p>
+        ${translitLine(w)}
         <div class="kid-choices n${step.choices.length}">
-          ${step.choices.map((id) => `<button class="kid-card" data-id="${id}" aria-label="${esc(WORD[id].word)}">${picture(id)}</button>`).join('')}
+          ${step.choices.map((id) => `<button class="kid-card" data-id="${id}" aria-label="${esc(C.byId[id].word)}">${picture(id)}</button>`).join('')}
         </div>
       </div>`);
     const target = ctx.app.querySelector(`[data-id="${w.id}"]`);
     const model = () => {
       target.classList.add('hint');
-      speakNow([PHRASES.here(w)]);
+      speakNow([C.phrases.here(w)]);
     };
     const waitForAnswer = () => {
       // Pas de compte à rebours visible : on redit la question, puis on montre la réponse.
@@ -582,12 +626,12 @@ function viewSession(profile) {
         bounce(b);
         cheer(b);
         record(w.id, activity, helped ? 'helped' : silent ? 'no_response' : 'success');
-        speakNow([PHRASES.yes(w)], () => later(next, 500));
+        speakNow([C.phrases.yes(w)], () => later(next, 500));
       } else {
         helped = true;
         bounce(b);
         stopSpeech?.();
-        stopSpeech = sayAll([PHRASES.thatIs(WORD[b.dataset.id]), PHRASES.here(w)]);
+        stopSpeech = sayAll([C.phrases.thatIs(C.byId[b.dataset.id]), C.phrases.here(w)]);
         target.classList.add('hint');
       }
     }));
@@ -596,17 +640,18 @@ function viewSession(profile) {
 
   // Action : toucher l'image trois fois en comptant.
   function showTouch(w) {
-    prompt = [PHRASES.touch(w)];
+    prompt = [C.phrases.touch(w)];
     let taps = 0;
     frame(`
       <div class="kid-stage">
-        <p class="kid-big-text">${esc(prompt[0])}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(prompt[0])}</p>
+        ${translitLine(w)}
         <button class="kid-card huge" id="pic" aria-label="${esc(w.word)}">${w.emoji[0]}</button>
         <p class="kid-count" aria-live="polite"></p>
       </div>`);
     const pic = ctx.app.querySelector('#pic');
     const count = ctx.app.querySelector('.kid-count');
-    const words = ['One!', 'Two!', 'Three!'];
+    const words = C.phrases.count;
     pic.addEventListener('click', () => {
       if (taps >= 3) return;
       bounce(pic);
@@ -616,21 +661,21 @@ function viewSession(profile) {
       if (taps === 3) {
         cheer(pic);
         record(w.id, 'touch', 'success');
-        later(() => speakNow([PHRASES.great(), PHRASES.name(w)], () => later(next, 400)), 700);
+        later(() => speakNow([C.phrases.great(), C.phrases.name(w)], () => later(next, 400)), 700);
       }
     });
     speakNow(prompt);
     // Si l'enfant ne touche pas, on avance quand même après un modèle (sans rien enregistrer).
-    later(() => { if (!taps) speakNow([PHRASES.name(w)], () => later(next, 1500)); }, 15000);
+    later(() => { if (!taps) speakNow([C.phrases.name(w)], () => later(next, 1500)); }, 15000);
   }
 
   // Production facultative : c'est le parent qui indique ce que l'enfant a dit. L'appli redonne toujours le modèle.
   function showSay(w) {
-    prompt = [PHRASES.whats(w)];
+    prompt = [C.phrases.whats(w)];
     frame(`
       <div class="kid-stage">
         <button class="kid-card huge" id="pic" aria-label="?">${w.emoji[0]}</button>
-        <p class="kid-big-text">${esc(prompt[0])}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(prompt[0])}</p>
       </div>
       <div class="kid-parent-strip" hidden>
         <p class="small">Parent : qu’a-t-il dit ?</p>
@@ -652,17 +697,17 @@ function viewSession(profile) {
       record(w.id, 'say', b.dataset.said);
       bounce(pic);
       cheer(pic);
-      const reply = b.dataset.said === 'exact_match' ? [PHRASES.yes(w)] : [PHRASES.name(w), PHRASES.look(w)];
+      const reply = b.dataset.said === 'exact_match' ? [C.phrases.yes(w)] : [C.phrases.name(w), C.phrases.look(w)];
       speakNow(reply, () => later(next, 500));
     });
   }
 
   function showMission(m) {
-    prompt = [m.en];
+    prompt = [m.say];
     frame(`
       <div class="kid-stage">
         <span class="kid-card huge static">${m.emoji}</span>
-        <p class="kid-big-text">${esc(m.en)}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(m.say)}</p>
       </div>
       <div class="kid-parent-strip">
         <p class="small"><strong>Mission avec vous :</strong> ${esc(m.parent)}</p>
@@ -674,7 +719,7 @@ function viewSession(profile) {
     ctx.app.querySelector('[data-done]').addEventListener('click', () => {
       markMission(profile.id, m.id);
       missionsDone.push(m.id);
-      speakNow(['Yes! Great job!'], () => later(next, 300));
+      speakNow([C.phrases.greatJob()], () => later(next, 300));
     });
     ctx.app.querySelector('[data-later]').addEventListener('click', next);
     speakNow(prompt);
@@ -683,14 +728,14 @@ function viewSession(profile) {
   function showBye() {
     const sticker = STICKERS[Math.floor(Math.random() * STICKERS.length)];
     let d2 = kids();
-    d2 = recordSession(d2, profile.id, { at: started, duration: Date.now() - started, words: [...practiced], missionsDone });
+    d2 = recordSession(d2, profile.id, { at: started, duration: Date.now() - started, lang: C.code, words: [...practiced], missionsDone });
     d2 = { ...d2, stickers: { ...d2.stickers, [profile.id]: [...(d2.stickers[profile.id] || []), sticker].slice(-60) } };
     commit(d2);
-    prompt = [PHRASES.bye(profile.name)];
+    prompt = [C.phrases.bye(profile.name)];
     frame(`
       <div class="kid-stage">
         <span class="kid-card huge static pop">${sticker}</span>
-        <p class="kid-big-text">${esc(prompt[0])}</p>
+        <p class="kid-big-text" ${textAttrs()}>${esc(prompt[0])}</p>
       </div>
       <button class="kid-next" id="home" aria-label="Fin">🏠</button>`);
     ctx.app.querySelector('#home').addEventListener('click', () => go('#/kids/play'));

@@ -6,24 +6,26 @@ const KEY = 'lingua.kids.v1';
 
 export function emptyData() {
   return {
+    v: 2,
     profiles: [], // [{ id, name, avatar, birth: 'AAAA-MM', native, target, interests, sessionMinutes, createdAt }]
     activeId: null,
     locked: false, // true pendant le mode enfant : on n'en sort que par l'action parentale
-    progress: {}, // id profil -> id mot -> état (voir engine.js)
-    missions: {}, // id profil -> id mission -> { done, last }
-    history: {}, // id profil -> [{ at, duration, words, missionsDone }]
+    progress: {}, // id profil -> langue -> id mot -> état (voir engine.js)
+    missions: {}, // id profil -> langue -> id mission -> { done, last }
+    history: {}, // id profil -> [{ at, duration, lang, words, missionsDone }]
     stickers: {}, // id profil -> [emoji] : le petit monde qui se remplit
   };
 }
 
 const HISTORY_MAX = 300;
+const LANGS = ['en', 'es', 'id', 'ne', 'ar'];
 
 let data = load();
 
 function load() {
   try {
     const raw = typeof localStorage !== 'undefined' && localStorage.getItem(KEY);
-    if (raw) return { ...emptyData(), ...JSON.parse(raw) };
+    if (raw) return migrate(JSON.parse(raw));
   } catch {
     // stockage indisponible : on garde des valeurs vides
   }
@@ -57,6 +59,33 @@ export function setLocked(on) {
 
 // ---------- Fonctions pures (testées) ----------
 
+// Version 1 (anglais seulement) : progression et missions rangées directement par profil.
+// Version 2 : rangées par langue, pour qu'un enfant puisse apprendre plusieurs langues.
+export function migrate(saved) {
+  const d = { ...emptyData(), ...saved };
+  if ((saved.v || 1) < 2) {
+    const wrap = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([pid, v]) => [pid, { en: v }]));
+    d.progress = wrap(saved.progress);
+    d.missions = wrap(saved.missions);
+    d.history = Object.fromEntries(Object.entries(saved.history || {}).map(([pid, list]) => [pid, list.map((h) => ({ lang: 'en', ...h }))]));
+    d.v = 2;
+  }
+  return d;
+}
+
+export function langProgress(d, profileId, lang) {
+  return d.progress[profileId]?.[lang] || {};
+}
+
+export function langMissions(d, profileId, lang) {
+  return d.missions[profileId]?.[lang] || {};
+}
+
+// Écrit l'état d'une langue pour un profil (progress ou missions).
+export function setLangData(d, field, profileId, lang, value) {
+  return { ...d, [field]: { ...d[field], [profileId]: { ...(d[field][profileId] || {}), [lang]: value } } };
+}
+
 export function addProfile(d, fields, now = Date.now()) {
   const id = `p${now.toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   const profile = {
@@ -65,7 +94,7 @@ export function addProfile(d, fields, now = Date.now()) {
     avatar: fields.avatar || '🦊',
     birth: fields.birth || null,
     native: 'fr',
-    target: 'en',
+    target: LANGS.includes(fields.target) ? fields.target : 'en',
     interests: fields.interests || [],
     sessionMinutes: clampMinutes(fields.sessionMinutes),
     createdAt: now,
@@ -81,6 +110,7 @@ export function updateProfile(d, id, fields) {
       ...fields,
       name: fields.name !== undefined ? String(fields.name).trim().slice(0, 30) : p.name,
       sessionMinutes: fields.sessionMinutes !== undefined ? clampMinutes(fields.sessionMinutes) : p.sessionMinutes,
+      target: LANGS.includes(fields.target) ? fields.target : p.target,
     } : p)),
   };
 }

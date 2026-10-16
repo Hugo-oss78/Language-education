@@ -1,12 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { WORDS, MISSIONS, PHRASES, CATEGORIES } from '../data/kids/en.js';
+import { BASE_WORDS, BASE_MISSIONS, CATEGORIES } from '../data/kids/words.js';
+import en from '../data/kids/en.js';
+import es from '../data/kids/es.js';
+import id from '../data/kids/id.js';
+import ne from '../data/kids/ne.js';
+import ar from '../data/kids/ar.js';
+import { buildContent, KIDS_LANGS } from '../js/kids/content.js';
 import {
   applyOutcome, buildSession, choiceCount, pickChoices, wordStatus, newWordBudget, nextNewWords,
   dueWords, ageInMonths, weeklySummary, STEPS, DAY, MIN,
 } from '../js/kids/engine.js';
-import { emptyData, addProfile, removeProfile, recordSession, updateProfile } from '../js/kids/store.js';
+import {
+  emptyData, addProfile, removeProfile, recordSession, updateProfile, migrate, langProgress, setLangData,
+} from '../js/kids/store.js';
+
+const ALL = { en, es, id, ne, ar };
+const { words: WORDS, missions: MISSIONS, phrases: PHRASES } = buildContent(en);
 
 const NOW = Date.UTC(2026, 9, 5, 9);
 const tim = { name: 'Tim', birth: '2024-09', interests: ['animals'], sessionMinutes: 3 };
@@ -32,7 +43,7 @@ test('données enfant : 20 mots uniques, images, catégories et missions valides
   assert.equal(new Set(WORDS.map((w) => w.emoji[0])).size, 20);
   assert.equal(MISSIONS.length, 5);
   for (const m of MISSIONS) {
-    assert.ok(m.en && m.parent && m.title && m.emoji, m.id);
+    assert.ok(m.say && m.parent && m.title && m.emoji, m.id);
     for (const id of m.words) assert.ok(WORDS.some((w) => w.id === id), `${m.id} : mot inconnu ${id}`);
   }
   assert.equal(PHRASES.look(WORDS.find((w) => w.id === 'apple')), 'Look! An apple!');
@@ -182,7 +193,59 @@ test('profil enfant : données minimales et suppression complète', () => {
 
 test('le mode enfant est hors ligne : ses fichiers sont dans le service worker', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  for (const f of ['css/kids.css', 'js/kids/engine.js', 'js/kids/store.js', 'js/kids/ui.js', 'data/kids/en.js']) {
+  const files = ['css/kids.css', 'js/kids/engine.js', 'js/kids/store.js', 'js/kids/ui.js', 'js/kids/content.js', 'data/kids/words.js',
+    ...KIDS_LANGS.map((c) => `data/kids/${c}.js`)];
+  for (const f of files) {
     assert.ok(sw.includes(`'${f}'`), f);
   }
+});
+
+test('Mode Enfant : les 5 langues ont tous les mots, missions et phrases', () => {
+  assert.deepEqual(Object.keys(ALL).sort(), [...KIDS_LANGS].sort());
+  for (const [code, lang] of Object.entries(ALL)) {
+    assert.equal(lang.code, code);
+    for (const b of BASE_WORDS) {
+      const w = lang.words[b.id];
+      assert.ok(w && w.word, `${code} : mot manquant ${b.id}`);
+      if (code === 'ne' || code === 'ar') assert.ok(w.translit, `${code} : transcription manquante pour ${b.id}`);
+    }
+    assert.equal(Object.keys(lang.words).length, BASE_WORDS.length, `${code} : mots en trop`);
+    for (const m of BASE_MISSIONS) assert.ok(lang.missions[m.id], `${code} : mission ${m.id}`);
+    const c = buildContent(lang);
+    assert.equal(c.phrases.count.length, 3);
+    const texts = [c.phrases.hello('Tim'), c.phrases.bye('Tim'), c.phrases.great(), c.phrases.greatJob(), ...c.missions.flatMap((m) => [m.say, m.parent])];
+    for (const w of c.words) {
+      for (const k of ['look', 'name', 'where', 'yes', 'here', 'thatIs', 'touch', 'whats', 'another']) texts.push(c.phrases[k](w));
+    }
+    for (const t of texts) {
+      assert.equal(typeof t, 'string', code);
+      assert.ok(t.trim() && !/undefined|null/.test(t), `${code} : « ${t} »`);
+    }
+    // Deux mots d'une même langue ne s'écrivent jamais pareil (sinon « Where is… ? » serait ambigu à l'oral).
+    assert.equal(new Set(c.words.map((w) => w.word.toLowerCase())).size, c.words.length, `${code} : mots en double`);
+  }
+  assert.ok(ne.reviewNeeded && ar.reviewNeeded);
+  assert.equal(buildContent(es).phrases.another(buildContent(es).byId.ball), '¡Mira! ¡Otra pelota!');
+  assert.equal(buildContent(ne).phrases.where(buildContent(ne).byId.daddy), 'बुबा कहाँ हुनुहुन्छ?');
+});
+
+test('progression rangée par langue, et migration des données anglaises existantes', () => {
+  const old = {
+    profiles: [{ id: 'p1', name: 'Tim', target: 'en' }], activeId: 'p1', locked: false,
+    progress: { p1: { ball: { comp: 20, seen: 1 } } }, missions: { p1: { 'find-ball': { done: 1 } } },
+    history: { p1: [{ at: 1 }] }, stickers: { p1: ['🌼'] },
+  };
+  const d = migrate(old);
+  assert.equal(d.v, 2);
+  assert.equal(langProgress(d, 'p1', 'en').ball.comp, 20);
+  assert.deepEqual(langProgress(d, 'p1', 'es'), {});
+  assert.equal(d.missions.p1.en['find-ball'].done, 1);
+  assert.equal(d.history.p1[0].lang, 'en');
+  assert.deepEqual(migrate(d), d, 'migration idempotente');
+  const d2 = setLangData(d, 'progress', 'p1', 'es', { ball: { comp: 5 } });
+  assert.equal(langProgress(d2, 'p1', 'en').ball.comp, 20, 'l’anglais est conservé');
+  assert.equal(langProgress(d2, 'p1', 'es').ball.comp, 5);
+  assert.equal(updateProfile(d2, 'p1', { target: 'xx' }).profiles[0].target, 'en', 'langue inconnue refusée');
+  assert.equal(updateProfile(d2, 'p1', { target: 'ne' }).profiles[0].target, 'ne');
+  assert.equal(addProfile(emptyData(), { name: 'Léa', target: 'ar' }).profiles[0].target, 'ar');
 });
