@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v10';
+const VERSION = 'lingua-v11';
 const FILES = [
   './',
   'index.html',
@@ -18,13 +18,19 @@ const FILES = [
   'js/kids/engine.js',
   'js/kids/store.js',
   'js/kids/ui.js',
+  'js/kids/content.js',
   'data/languages.js',
   'data/en.js',
   'data/es.js',
   'data/id.js',
   'data/ne.js',
   'data/ar.js',
+  'data/kids/words.js',
   'data/kids/en.js',
+  'data/kids/es.js',
+  'data/kids/id.js',
+  'data/kids/ne.js',
+  'data/kids/ar.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
