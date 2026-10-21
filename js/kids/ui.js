@@ -434,14 +434,67 @@ function showGateQuestion() {
 
 // ---------- Accueil enfant ----------
 
+// Pas de zoom pendant le mode enfant : un tout-petit touche l'écran avec plusieurs doigts
+// et tape vite deux fois. Le zoom reste possible partout ailleurs (accessibilité des adultes).
+//   - CSS (kids.css) : touch-action bloque le double appui et le pincement (Chrome, Android, Safari récent) ;
+//   - balise viewport : maximum-scale=1 (respectée par Android ; Safari iOS l'ignore) ;
+//   - Safari iOS : on annule ses gestes de pincement (gesturestart) et les déplacements à plusieurs doigts.
+const viewport = document.querySelector('meta[name="viewport"]');
+const viewportDefault = viewport?.getAttribute('content') || '';
+const stopGesture = (e) => e.preventDefault();
+const stopMultiTouch = (e) => { if (e.touches.length > 1) e.preventDefault(); };
+// Double appui (Safari iOS zoome encore malgré le CSS sur certaines versions) : le 2e appui rapide
+// n'est pas laissé au navigateur, mais on déclenche nous-mêmes le clic pour que les appuis rapides comptent.
+// Un geste à plusieurs doigts (paume, pincement) n'est jamais compté comme un appui.
+let lastTouchEnd = 0;
+let multiTouch = false;
+const noteTouches = (e) => { if (e.touches.length > 1) multiTouch = true; };
+const stopDoubleTap = (e) => {
+  if (multiTouch) {
+    e.preventDefault();
+    if (!e.touches.length) multiTouch = false;
+    lastTouchEnd = 0;
+    return;
+  }
+  if (e.timeStamp - lastTouchEnd < 350 && e.changedTouches.length === 1 && !e.touches.length) {
+    e.preventDefault();
+    e.target.closest?.('button, a, label')?.click();
+  }
+  lastTouchEnd = e.timeStamp;
+};
+let zoomLocked = false;
+
+function lockZoom() {
+  if (zoomLocked) return;
+  zoomLocked = true;
+  viewport?.setAttribute('content', `${viewportDefault}, maximum-scale=1, user-scalable=no`);
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) => document.addEventListener(t, stopGesture, { passive: false }));
+  document.addEventListener('touchmove', stopMultiTouch, { passive: false });
+  document.addEventListener('touchstart', noteTouches, { passive: true });
+  document.addEventListener('touchend', stopDoubleTap, { passive: false });
+}
+
+function unlockZoom() {
+  if (!zoomLocked) return;
+  zoomLocked = false;
+  viewport?.setAttribute('content', viewportDefault);
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) => document.removeEventListener(t, stopGesture));
+  document.removeEventListener('touchmove', stopMultiTouch);
+  document.removeEventListener('touchstart', noteTouches);
+  document.removeEventListener('touchend', stopDoubleTap);
+  multiTouch = false;
+}
+
 function enterKidsMode() {
   document.body.classList.add('kids-mode');
+  lockZoom();
   ctx.setTheme(KID_HUE);
   setLocked(true);
 }
 
 function leaveKidsMode() {
   document.body.classList.remove('kids-mode');
+  unlockZoom();
   document.querySelector('.gate')?.remove();
   try { speechSynthesis.cancel(); } catch { /* rien */ }
 }

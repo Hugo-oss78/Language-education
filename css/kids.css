@@ -56,6 +56,8 @@ body.kids-mode::before {
     linear-gradient(180deg, #cdeffa 0%, #e8f8f1 55%, #fff4dc 100%);
 }
 html:has(body.kids-mode) { background: #e8f8f1; }
+/* Pas de zoom (double appui, pincement) ni de rebond ou d'actualisation en tirant l'écran : seul le défilement vertical reste. */
+html:has(body.kids-mode), body.kids-mode, body.kids-mode .gate { touch-action: pan-y; overscroll-behavior: none; }
 body.kids-mode .container { max-width: 760px; }
 
 .kids { min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 10px 0 18px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
