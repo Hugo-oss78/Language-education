@@ -140,6 +140,18 @@ Si l’enfant ne répond pas, il n’y a pas de compte à rebours visible. Aprè
 
 Le verrou survit au rechargement de la page.
 
+### Pas de zoom pendant le mode enfant
+
+Un tout-petit touche l’écran avec plusieurs doigts et tape vite. Sur les écrans enfant uniquement :
+
+- `touch-action: pan-y` bloque le pincement et le double appui (le défilement vertical reste possible) ;
+- la balise viewport passe à `maximum-scale=1` (respectée par Android, ignorée par Safari iOS) ;
+- pour Safari iOS, les gestes de pincement (`gesturestart`) et les déplacements à plusieurs doigts sont annulés ;
+  un deuxième appui rapide n’est pas laissé au navigateur (il zoomerait) mais compte quand même comme un appui ;
+- un geste à plusieurs doigts (paume, pincement) n’est jamais compté comme un appui.
+
+Le zoom redevient possible dès la sortie par la porte parentale (espace parent et mode adulte).
+
 ## 6. Dépendances
 
 Il n’y a **aucune nouvelle dépendance**. Le Mode Enfant utilise uniquement :
