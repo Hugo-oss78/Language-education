@@ -25,6 +25,42 @@ Une unité regroupe 2 ou 3 thèmes et se termine par un **dialogue** qui sert d�
 Un thème est validé quand chaque carte a été réussie au moins une fois ; un dialogue, avec au moins 2 bonnes réponses sur 3.
 L’étape suivante est mise en avant, mais toutes restent ouvertes ; chaque unité a son quiz.
 
+## TOEIC blanc (anglais)
+
+Sur la page Anglais, « TOEIC blanc » reprend le **format du TOEIC Listening & Reading**. Il compte 7 parties :
+
+| Section | Parties |
+|---|---|
+| Écoute | 1 photographies, 2 questions-réponses, 3 conversations, 4 exposés |
+| Lecture | 5 phrases à compléter, 6 textes à compléter, 7 compréhension écrite |
+
+Le test est en version réduite : 50 questions originales au lieu de 200.
+
+- **Test blanc** (environ 35 min) :
+  - l'audio est joué une seule fois et, aux parties 1 et 2, les réponses ne sont pas écrites, comme à l'examen ;
+  - la lecture est chronométrée (19 min) ;
+  - à la fin : un score **estimé** sur 990 avec une fourchette, le niveau CECRL de chaque section, le détail par partie et une correction expliquée en français.
+- **Entraînement par partie** : correction immédiate, réécoute et transcription.
+- Les voix alternent plusieurs accents anglais quand l'appareil en a.
+
+Ce ne sont pas les questions officielles : elles appartiennent à ETS et ne sont pas publiques. Le score n'a donc rien d'officiel.
+
+La conversion des bonnes réponses en score est une estimation de Lingua. ETS, lui, utilise une table propre à chaque version du test, qui n'est pas publiée.
+
+Les niveaux CECRL suivent les seuils minimaux publiés par ETS :
+
+| Section | A1 | A2 | B1 | B2 | C1 |
+|---|---|---|---|---|---|
+| Écoute | 60 | 110 | 275 | 400 | 490 |
+| Lecture | 60 | 115 | 275 | 385 | 455 |
+
+Sources :
+- ETS, « Mapping the TOEIC tests on the CEFR » ;
+- IIBC (organisme du TOEIC au Japon), page « TOEIC Listening & Reading Test : format » ;
+- brochure ETS sur le format (accents).
+
+ETS propose aussi des tests d'exemple officiels gratuits sur sa page de préparation.
+
 ## Mode Enfant (2–5 ans, 5 langues)
 
 Un espace séparé pour éveiller un tout-petit francophone à l’anglais, l’espagnol, l’indonésien, le népalais ou l’arabe, **avec un parent à côté** :
@@ -135,6 +171,7 @@ js/srs.js             répétition espacée
 js/text.js            correction des réponses, lecture CSV
 js/storage.js         sauvegarde locale
 js/kids/              Mode Enfant (moteur, stockage, écrans)
+js/toeic/             TOEIC blanc (score estimé, écrans)
 js/icons.js           icônes et drapeaux (SVG)
 data/                 langues et paquets (data/kids : mots du Mode Enfant)
 css/kids.css          styles du Mode Enfant

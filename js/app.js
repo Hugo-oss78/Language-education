@@ -432,6 +432,12 @@ async function viewLanguage(code) {
       <a class="chip-btn glass" href="#/quiz/${code}/all">${icon('target')} Quiz éclair</a>
       <a class="chip-btn glass" href="#/session/${code}/all?mode=flash">${icon('cards')} Cartes seules</a>
     </div>
+    ${code === 'en' ? `
+      <a class="add-word glass" href="#/toeic" style="--rim:#7fb6d9">
+        <span class="orb" style="--hue:#7fb6d9">${icon('trophy')}</span>
+        <span class="hero-body"><strong>TOEIC blanc</strong><span class="muted small">Le format du TOEIC, un score estimé et ton niveau (CECRL)</span></span>
+        ${icon('arrow')}
+      </a>` : ''}
     <a class="add-word glass" href="#/add/${code}" style="--rim:var(--gold)">
       <span class="orb" style="--hue:var(--gold)">${icon('plus')}</span>
       <span class="hero-body"><strong>Ajouter un mot</strong><span class="muted small">Un mot découvert ? Il rejoint tes mots du jour.</span></span>
@@ -1659,6 +1665,9 @@ async function route() {
     if (view === 'kids') {
       const { routeKids } = await import('./kids/ui.js');
       cleanup = await routeKids(a, { app, setActiveTab, setTheme, toast });
+    } else if (view === 'toeic') {
+      const { routeToeic } = await import('./toeic/ui.js');
+      cleanup = await routeToeic(a, b, { app, setActiveTab, setTheme, toast });
     } else if (view === 'lang') await viewLanguage(a);
     else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined, learn: params.has('learn') });
     else if (view === 'path') await viewPath(a);
