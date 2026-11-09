@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v19';
+const VERSION = 'lingua-v20';
 const FILES = [
   './',
   'index.html',
@@ -14,6 +14,7 @@ const FILES = [
   'js/exercises.js',
   'js/icons.js',
   'js/path.js',
+  'js/placement.js',
   'js/lookup.js',
   'js/translate.js',
   'js/kids/engine.js',
@@ -24,6 +25,7 @@ const FILES = [
   'js/toeic/ui.js',
   'data/languages.js',
   'data/en.js',
+  'data/en-beginner.js',
   'data/es.js',
   'data/id.js',
   'data/ne.js',

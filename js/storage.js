@@ -9,6 +9,7 @@ const DEFAULTS = {
   history: {}, // 'AAAA-MM-JJ' -> { reviews, newCards }
   dialogues: {}, // 'langue:id' -> { best, at }
   boosted: {}, // id de carte -> date : mots choisis pour être appris en priorité
+  placement: {}, // code langue -> { level, at } : point de départ trouvé par le test de niveau
 };
 
 let data = load();
@@ -32,6 +33,7 @@ function merge(saved) {
     history: saved.history || d.history,
     dialogues: saved.dialogues || d.dialogues,
     boosted: saved.boosted || d.boosted,
+    placement: saved.placement || d.placement,
   };
 }
 
@@ -51,6 +53,7 @@ export const store = {
   get history() { return data.history; },
   get dialogues() { return data.dialogues; },
   get boosted() { return data.boosted; },
+  get placement() { return data.placement; },
 };
 
 export function today(date = new Date()) {

@@ -1,9 +1,12 @@
-// Paquets d'anglais, niveau intermédiaire (B1–B2), pour francophones.
+// Paquets d'anglais pour francophones : débutant (A1–A2, dans en-beginner.js) puis intermédiaire (B1–B2, ici).
+import beginner from './en-beginner.js';
+
 // Paquet : id, title, icon (voir js/icons.js), hue (couleur du thème), level (niveau CECRL indicatif).
 // Carte : fr (sens en français), term (mot anglais), example, exampleFr (traduction), note.
 // Les réponses acceptées sont séparées par « / ».
 export default {
   decks: [
+    ...beginner.decks,
     {
       id: 'conversation',
       title: 'Parler avec aisance',
@@ -480,6 +483,7 @@ export default {
     },
   ],
   dialogues: [
+    ...beginner.dialogues,
     {
       id: 'cafe',
       title: 'Au café',
