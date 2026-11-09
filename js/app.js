@@ -15,6 +15,9 @@ import {
   exportJson, importJson, resetAll,
 } from './storage.js';
 import { isLocked as kidsLocked } from './kids/store.js';
+import {
+  placementLevels, levelQuestions, nextAfter, unitsFrom, orderFresh, PER_LEVEL,
+} from './placement.js';
 
 const app = document.getElementById('app');
 const langCache = {};
@@ -45,6 +48,7 @@ async function loadLanguage(code) {
         ...c,
         id: `${code}:${deck.id}:${c.key || slug(c.translit || c.term) || i}`,
         deckId: deck.id,
+        level: deck.level,
         script: deck.type === 'script',
         sentence: deck.type === 'sentences',
       })),
@@ -68,6 +72,10 @@ function counts(cards, now = Date.now()) {
     if (!isNew(s) && (s.reps >= 1 || s.lapses > 0)) learned++;
   }
   return { due, fresh, mature, learned, total: cards.length, seen: cards.length - fresh };
+}
+
+function startLevel(code) {
+  return store.placement[code]?.level || null;
 }
 
 function newLeftToday(code) {
@@ -376,6 +384,131 @@ async function viewHome() {
   `);
 }
 
+// ---------- Test de niveau ----------
+
+async function viewPlacement(code) {
+  setActiveTab('home');
+  const lang = getLanguage(code);
+  if (!lang) return go('#/');
+  setTheme(lang.hue);
+  const { decks } = await loadLanguage(code);
+  const levels = placementLevels(decks);
+  const results = [];
+  let questions = [];
+  let qi = 0;
+  let right = 0;
+  let timer = null;
+  cleanup = () => clearTimeout(timer);
+  const lv = (l) => `${l} · ${LEVEL_NAMES[l]}`;
+
+  const intro = () => render(`
+    ${pageHead({
+      back: { href: `#/lang/${code}`, label: lang.name },
+      eyebrow: 'Test de niveau',
+      mark: icon('compass'),
+      title: 'Où commencer ?',
+      lede: `Quelques mots de ${lang.name.toLowerCase()} par niveau (${levels.join(', ')}). On s’arrête dès qu’un niveau est trop difficile : environ 3 minutes.`,
+    })}
+    <section class="glass placement-intro">
+      <p>${icon('lightbulb')} Réponds <b>« Je ne sais pas »</b> plutôt que de deviner : le résultat sera plus juste.</p>
+      <p class="muted small">C’est une estimation à partir du vocabulaire de Lingua, pas un test officiel. Tu pourras le refaire ou changer de point de départ quand tu veux.</p>
+      <button class="btn primary full" id="go">${icon('compass')} Commencer</button>
+    </section>`);
+
+  const startLevelBlock = (level) => {
+    questions = levelQuestions(decks, level);
+    qi = 0;
+    right = 0;
+    ask();
+  };
+
+  const ask = () => {
+    const q = questions[qi];
+    render(`
+      <header class="session-head">
+        <a class="icon-btn ghost" href="#/lang/${code}" aria-label="Quitter le test">${icon('x')}</a>
+        <div class="progress wide" role="progressbar" aria-label="Progression"><span style="width:${Math.round((qi / PER_LEVEL) * 100)}%"></span></div>
+        <span class="counter">${qi + 1}/${PER_LEVEL}</span>
+      </header>
+      <p class="kind-chip"><span>Niveau ${lv(q.level)}</span><span class="sep">·</span><span class="muted">Test de niveau</span></p>
+      <section class="card glass placement-q">
+        <p class="muted">${q.prompt}</p>
+        <p class="placement-word" ${q.toFr ? langAttrs(lang) : ''}>${esc(q.shown)} ${q.toFr ? speakBtn(q.shown) : ''}</p>
+        ${q.translit ? `<p class="translit">${esc(q.translit)}</p>` : ''}
+        <div class="choices">${q.options.map((o, i) => `<button type="button" class="choice" data-i="${i}">
+          <kbd>${i + 1}</kbd><span ${q.toFr ? '' : langAttrs(lang)}>${esc(o)}</span>${q.optionTranslit?.[i] ? `<small class="translit">${esc(q.optionTranslit[i])}</small>` : ''}</button>`).join('')}</div>
+        <button type="button" class="btn full placement-skip" id="dunno">Je ne sais pas</button>
+      </section>`);
+    bindSpeak(app, code);
+    const answer = (i) => {
+      app.querySelectorAll('.choice, #dunno').forEach((b) => { b.disabled = true; });
+      const ok = i === q.answer;
+      if (ok) right++;
+      app.querySelectorAll('.choice').forEach((b, j) => {
+        if (j === q.answer) b.classList.add('right');
+        else if (j === i) b.classList.add('wrong');
+      });
+      timer = setTimeout(() => {
+        qi++;
+        if (qi < questions.length) return ask();
+        results.push({ level: q.level, correct: right, total: questions.length });
+        const step = nextAfter(levels, results);
+        if (step.done) return finish(step);
+        between(q.level, step.next);
+      }, ok ? 500 : 1100);
+    };
+    app.querySelectorAll('.choice').forEach((b) => b.addEventListener('click', () => answer(Number(b.dataset.i))));
+    $id('dunno').addEventListener('click', () => answer(-1));
+  };
+
+  const between = (passed, next) => {
+    render(`
+      <section class="empty">
+        <span class="orb big" style="--hue:#9fd68b">${icon('check')}</span>
+        <h1>${passed} validé</h1>
+        <p class="lede">${right}/${PER_LEVEL} bonnes réponses. On passe au niveau <b>${lv(next)}</b>.</p>
+        <button class="btn primary full" id="next">Continuer ${icon('arrow')}</button>
+        <button class="btn full" id="stop">M’arrêter là : commencer au niveau ${next}</button>
+      </section>`);
+    $id('next').addEventListener('click', () => startLevelBlock(next));
+    $id('stop').addEventListener('click', () => finish({ done: true, start: next, passedAll: false }));
+  };
+
+  const finish = ({ start, passedAll }) => {
+    const beginner = start === levels[0] && !passedAll;
+    render(`
+      ${pageHead({
+        back: { href: `#/lang/${code}`, label: lang.name },
+        eyebrow: 'Test de niveau',
+        mark: icon('compass'),
+        title: `Point de départ : ${start}`,
+        lede: `<b class="glow">${LEVEL_NAMES[start]}</b>`,
+      })}
+      <section class="glass placement-result">
+        <ul class="placement-levels">${results.map((r) => `<li><span>${lv(r.level)}</span><b class="${r.correct >= 4 ? 'gold' : 'muted'}">${r.correct}/${r.total}</b></li>`).join('')}</ul>
+        <p>${beginner
+          ? 'Tu commences au début du parcours : c’est parfait pour débuter, chaque mot est expliqué et traduit.'
+          : passedAll
+            ? `Tu connais déjà bien le vocabulaire jusqu’au niveau ${start}. Commence par ce niveau et vise les dialogues et les tournures.${code === 'en' ? ' Pour te situer plus finement, essaie le <a href="#/toeic">TOEIC blanc</a>.' : ''}`
+            : `Les niveaux précédents semblent acquis : ton parcours et tes nouveaux mots commencent au niveau ${start}. Les unités d’avant restent ouvertes si tu veux réviser.`}</p>
+        <p class="muted small">Estimation à partir de ${results.length * PER_LEVEL} mots, pas un test officiel.</p>
+        <button class="btn primary full" id="save">${icon('arrow')} Commencer au niveau ${start}</button>
+        ${beginner ? '' : `<button class="btn full" id="from-start">Commencer plutôt au tout début (${levels[0]})</button>`}
+      </section>`);
+    const choose = (level) => {
+      store.placement[code] = { level, at: today() };
+      save();
+      toast(`Point de départ : ${level}`);
+      go(`#/path/${code}`);
+    };
+    $id('save').addEventListener('click', () => choose(start));
+    $id('from-start')?.addEventListener('click', () => choose(levels[0]));
+  };
+
+  intro();
+  $id('go').addEventListener('click', () => startLevelBlock(levels[0]));
+}
+
 // ---------- Page d'une langue ----------
 
 async function viewLanguage(code) {
@@ -389,8 +522,9 @@ async function viewLanguage(code) {
   const chosen = decks.flatMap((d) => d.cards).filter((c) => (c.deckId === OWN_DECK || store.boosted[c.id]) && isNew(stateOf(c))).length;
   const newToday = Math.min(newLeftToday(code), all.fresh - chosen) + Math.min(chosen, 20);
   const path = await loadPath(code);
-  const upNext = nextStep(path.units, path.statusOf);
+  const upNext = nextStep(unitsFrom(path.units, startLevel(code)), path.statusOf);
   const prog = pathProgress(path.units, path.statusOf);
+  const placed = store.placement[code];
   const scriptDecks = decks.filter((d) => d.type === 'script');
   const byLevel = LEVELS
     .map((lv) => ({ lv, decks: decks.filter((d) => d.level === lv && d.type !== 'script' && d.id !== OWN_DECK) }))
@@ -433,11 +567,18 @@ async function viewLanguage(code) {
       </span>
       ${icon('arrow')}
     </a>
+    ${placed ? '' : `
+      <a class="add-word glass placement-card" href="#/placement/${code}" style="--rim:#9fd68b">
+        <span class="orb" style="--hue:#9fd68b">${icon('compass')}</span>
+        <span class="hero-body"><strong>Test de niveau</strong><span class="muted small">Débutant ou déjà quelques bases ? 3 minutes pour trouver ton point de départ.</span></span>
+        ${icon('arrow')}
+      </a>`}
     <section class="path-card glass" style="--rim:var(--gold)">
       <div class="path-card-head">
         <span class="kicker">Mon parcours</span>
         <span class="muted small">${prog.done}/${prog.total} étapes</span>
       </div>
+      ${placed ? `<p class="muted small placement-line">Point de départ : <b class="gold">${placed.level}</b> (${LEVEL_NAMES[placed.level]}) · <a href="#/placement/${code}">refaire le test</a></p>` : ''}
       ${progressBar(pct(prog.done, prog.total), 'Progression du parcours')}
       ${upNext ? `
         <a class="path-next" href="${stepHref(code, upNext.step)}" style="--hue:${path.info(upNext.step).hue}">
@@ -534,7 +675,9 @@ async function viewPath(code) {
   if (!lang) return go('#/');
   setTheme(lang.hue);
   const { units, statusOf, info, deckById } = await loadPath(code);
-  const upNext = nextStep(units, statusOf);
+  const start = startLevel(code);
+  const upNext = nextStep(unitsFrom(units, start), statusOf);
+  const before = (u) => start && u.id !== 'alphabet' && LEVELS.indexOf(u.level) < LEVELS.indexOf(start);
   const prog = pathProgress(units, statusOf);
   let n = 0;
 
@@ -553,10 +696,10 @@ async function viewPath(code) {
       const doneCount = u.steps.filter((s) => statusOf(s).done).length;
       const unitDecks = u.steps.filter((s) => s.type === 'deck').map((s) => s.id);
       return `
-      <section class="unit">
+      <section class="unit ${before(u) ? 'before-start' : ''}">
         <header class="unit-head">
           <span class="level">${u.id === 'alphabet' ? 'ABC' : u.level}</span>
-          <span class="unit-title"><span class="muted small">Unité ${u.number}</span><strong>${esc(u.title)}</strong></span>
+          <span class="unit-title"><span class="muted small">Unité ${u.number}${before(u) ? ' · avant ton point de départ' : ''}</span><strong>${esc(u.title)}</strong></span>
           <span class="muted small">${doneCount}/${u.steps.length}</span>
         </header>
         <ol class="trail">
@@ -868,7 +1011,8 @@ function buildQueue(cards, code, deckOnly, opts, learn = false) {
   const mine = (c) => c.deckId === OWN_DECK || store.boosted[c.id];
   const priority = cards.filter((c) => mine(c) && isNew(stateOf(c))).slice(0, 20);
   const letters = cards.filter((c) => c.script && !mine(c) && isNew(stateOf(c)));
-  const others = cards.filter((c) => !c.script && !mine(c) && isNew(stateOf(c)));
+  // Avec un test de niveau, les nouveaux mots commencent au point de départ (les plus faciles ensuite).
+  const others = orderFresh(cards.filter((c) => !c.script && !mine(c) && isNew(stateOf(c))), startLevel(code));
   const fresh = [...priority];
   const freshLimit = limit + priority.length;
   while (fresh.length < freshLimit && (letters.length || others.length)) {
@@ -1693,6 +1837,7 @@ async function route() {
     } else if (view === 'lang') await viewLanguage(a);
     else if (view === 'session') await viewSession(a, b || 'all', { mode: params.get('mode') || undefined, learn: params.has('learn') });
     else if (view === 'path') await viewPath(a);
+    else if (view === 'placement') await viewPlacement(a);
     else if (view === 'add') await viewAdd(a);
     else if (view === 'quiz') await viewSession(a, b || 'all', { quiz: true });
     else if (view === 'browse') await viewBrowse(a, b);

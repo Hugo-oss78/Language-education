@@ -644,3 +644,15 @@ button.chip-btn[aria-pressed="true"] { color: var(--gold); box-shadow: inset 0 0
 .found .btn { justify-self: start; margin-top: 8px; }
 #add-result .verdict { margin-bottom: 8px; }
 .verdict:not(.ok):not(.ko) { color: var(--gold); background: rgb(244 199 107 / 10%); }
+
+/* ---------- Test de niveau ---------- */
+.placement-intro, .placement-result { padding: 18px; display: grid; gap: 12px; }
+.placement-intro p, .placement-result p { margin: 0; }
+.placement-intro .ico { color: var(--gold); }
+.placement-q { text-align: center; }
+.placement-word { font: 700 clamp(1.8rem, 8vw, 2.4rem)/1.2 var(--serif); margin: 6px 0 0; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.placement-skip { margin-top: 12px; color: var(--muted); }
+.placement-levels { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.placement-levels li { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 6px 0; }
+.placement-line { margin: 6px 0 0; }
+.unit.before-start { opacity: 0.6; }

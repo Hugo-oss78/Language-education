@@ -5,18 +5,25 @@ anglais, espagnol, indonésien, népalais et arabe.
 
 - Fonctionne sur téléphone et ordinateur, **hors ligne** une fois ouverte.
 - Aucun compte : la progression reste **sur l’appareil** (export / import possible).
-- **1 233 cartes** (mots, lettres, phrases) en 78 paquets et **28 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
+- **1 435 cartes** (mots, lettres, phrases) en 93 paquets et **32 dialogues**, du niveau A1 au B2 (niveaux indicatifs).
 
 | Langue | Paquets | Cartes | Remarque |
 |---|---|---|---|
-| Anglais | 17 | 283 | B1–B2 : conversation, voyage, montagne, plongée, faux amis, phrasal verbs, tournures |
+| Anglais | 32 | 485 | A1–A2 : bases pour débutants (exemples traduits) · B1–B2 : conversation, voyage, montagne, plongée, faux amis, phrasal verbs, tournures |
 | Espagnol | 16 | 255 | A1–B2 : famille, maison, santé, montagne, mer & plongée, récit au passé |
 | Indonésien | 14 | 230 | A1–B1 : famille, marché, volcans, mer & plongée, phrases polies |
 | Népalais | 16 | 243 | Alphabet devanagari + A1–B1 (santé, trek, lacs & rivières…) · **à faire relire** |
 | Arabe | 15 | 222 | Alphabet + arabe standard (montagne & désert, mer & plongée…) · **à faire relire** |
 
-Chaque langue a aussi 5 à 6 **dialogues** (audio, traduction, questions de compréhension)
+Chaque langue a aussi 5 à 10 **dialogues** (audio, traduction, questions de compréhension)
 et un paquet **« Construire des phrases »** avec sa fiche de grammaire.
+
+## Test de niveau
+
+Sur la page d’une langue, « Test de niveau » propose 5 mots par niveau (A1, puis A2, B1…), dans les deux sens.
+On monte d’un niveau tant qu’on répond juste à 4 mots sur 5 ; au premier niveau raté, on s’arrête. « Je ne sais pas » évite de deviner.
+Le niveau trouvé devient le **point de départ** : le parcours et les nouveaux mots du jour commencent là, et les unités d’avant restent ouvertes.
+C’est une estimation à partir du vocabulaire de Lingua, pas un test officiel ; on peut le refaire à tout moment.
 
 ## Parcours
 
@@ -165,6 +172,7 @@ css/style.css         styles (thème sombre, verre, lueurs)
 js/app.js             interface, séances, statistiques
 js/exercises.js       choix et construction des exercices
 js/path.js            découpage du parcours en unités et étapes
+js/placement.js       test de niveau (point de départ)
 js/lookup.js          recherche d’un mot dans la base (doublons, traductions)
 js/translate.js       suggestion de traduction en ligne (MyMemory, sur demande)
 js/srs.js             répétition espacée
