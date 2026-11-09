@@ -328,18 +328,26 @@ function viewRunner({ mode, part }) {
     document.body.classList.remove('in-session');
   }
 
+  // Numéros des questions de l'écran, comptés dans ce test (50 au total, ou les questions de la partie).
+  function questionRange() {
+    const before = list.slice(0, index).reduce((n, x) => n + x.questions.length, 0);
+    const count = list[index].questions.length;
+    return count > 1 ? `${before + 1}–${before + count}` : `${before + 1}`;
+  }
+
   function header() {
-    const total = list.length;
-    const pct = Math.round((index / total) * 100);
+    const done = list.slice(0, index).reduce((n, x) => n + x.questions.length, 0);
+    const pct = Math.round((done / pool.length) * 100);
     const s = list[index];
     const p = PARTS[s.part];
     const label = mode === 'exam' ? (s.section === 'L' ? 'Écoute' : 'Lecture') : 'Entraînement';
+    const range = questionRange();
     return `<div class="session-head toeic-head">
       <button class="icon-btn ghost" id="quit" aria-label="Quitter">${icon('x')}</button>
       <div class="progress wide" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progression"><span style="width:${pct}%"></span></div>
-      ${phase === 'reading' ? '<span class="toeic-timer" id="timer"></span>' : `<span class="counter">${index + 1}/${total}</span>`}
+      ${phase === 'reading' ? '<span class="toeic-timer" id="timer"></span>' : `<span class="counter" aria-label="Question ${range} sur ${pool.length}">${range}/${pool.length}</span>`}
     </div>
-    <p class="kind-chip"><span>Partie ${s.part} · ${p.name}</span><span class="sep">·</span><span class="muted">${label}</span></p>`;
+    <p class="kind-chip"><span>Partie ${s.part} · ${p.name}</span><span class="sep">·</span><span class="muted">${label}${phase === 'reading' ? ` · question ${range}/${pool.length}` : ''}</span></p>`;
   }
 
   function show() {
