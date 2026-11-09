@@ -83,3 +83,9 @@
 .toeic-review-item summary .bad { color: var(--bad); }
 .toeic-review-item[open] summary { margin-bottom: 12px; }
 @media (max-width: 360px) { .toeic-scores { grid-template-columns: 1fr; } }
+
+.toeic-hint { margin: 6px 0 0; font-size: 0.86rem; color: var(--muted); }
+.toeic-hint b { color: var(--text); }
+.toeic-aid { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px 14px; max-width: 420px; cursor: pointer; }
+.toeic-aid input { width: auto; margin-top: 4px; accent-color: var(--gold); transform: scale(1.25); }
+.toeic-prompt { margin: 8px 0 0; font-size: 1.05rem; color: var(--gold); }

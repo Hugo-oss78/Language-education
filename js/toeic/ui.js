@@ -186,7 +186,7 @@ function viewHome() {
           <li><a href="#/toeic/result/${i}">
             <span>${new Date(a.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             <strong>≈ ${a.result.total.score}</strong>
-            <span class="muted small">écoute ${a.result.L.score} (${a.result.L.cefr}) · lecture ${a.result.R.score} (${a.result.R.cefr})</span>
+            <span class="muted small">écoute ${a.result.L.score} (${a.result.L.cefr}) · lecture ${a.result.R.score} (${a.result.R.cefr})${a.aid ? ' · avec aide' : ''}</span>
           </a></li>`).join('')}
       </ul>` : ''}
 
@@ -268,11 +268,11 @@ function explainHtml(q, chosen) {
 }
 
 // Corps d'un écran (une question ou un ensemble). mode : 'exam' | 'train' | 'review'.
-function screenBody(screen, { mode, answers, revealed }) {
+function screenBody(screen, { mode, answers, revealed, aid = false }) {
   const first = screen.questions[0];
   const set = first.setRef;
   const listening = screen.section === 'L';
-  const showText = (q) => !(listening && q.part <= 2) || mode !== 'exam' && revealed.has(q.id) || mode === 'review';
+  const showText = (q) => !(listening && q.part <= 2) || aid || (mode !== 'exam' && revealed.has(q.id)) || mode === 'review';
   let top = '';
   if (first.part === 1) top = sceneHtml(first.item);
   if (first.part === 2) top = '<p class="toeic-instruction">Écoute la question et les trois réponses.</p>';
@@ -294,7 +294,9 @@ function screenBody(screen, { mode, answers, revealed }) {
     else if (q.part === 6) stem = `<p class="toeic-stem small">Blanc (${q.index + 1})</p>`;
     else if (q.part >= 3) stem = `<p class="toeic-stem"><span class="muted">${q.number}.</span> ${esc(q.item.q)}</p>`;
     return `<div class="toeic-q" id="q-${q.id}">
-      ${q.part <= 2 ? `<p class="toeic-stem"><span class="muted">${q.number}.</span> ${q.part === 1 ? 'Quelle phrase décrit le mieux l’image ?' : 'Quelle est la meilleure réponse ?'}</p>` : stem}
+      ${q.part <= 2 ? `<p class="toeic-stem"><span class="muted">${q.number}.</span> ${q.part === 1 ? 'Quelle phrase décrit le mieux l’image ?' : 'Quelle est la meilleure réponse ?'}</p>
+        ${q.part === 2 && showText(q) ? `<p class="toeic-prompt">« ${esc(q.item.prompt)} »</p>` : ''}
+        ${showText(q) ? '' : `<p class="toeic-hint">${q.part === 1 ? 'Les 4 phrases' : 'La question et les 3 réponses'} sont dites à voix haute, <b>pas écrites</b> (comme au vrai TOEIC). Choisis la lettre que tu as entendue.</p>`}` : stem}
       ${optionsHtml(q, { showText: showText(q), chosen, reveal })}
       ${reveal ? explainHtml(q, chosen) : ''}
     </div>`;
@@ -311,6 +313,7 @@ function viewRunner({ mode, part }) {
   const list = screens(pool);
   const answers = {};
   const revealed = new Set();
+  let aid = false; // « Afficher le texte des réponses » (parties 1 et 2) : plus facile, signalé dans le résultat
   let index = 0;
   let phase = mode === 'exam' ? 'listening' : 'train';
   let stopAudio = null;
@@ -365,7 +368,7 @@ function viewRunner({ mode, part }) {
           <span class="toeic-audio-state" id="audio-state">${icon('headphones')} Écoute…</span>
           ${mode === 'train' ? `<button class="btn" id="replay">${icon('speaker')} Réécouter</button>` : ''}
         </div>` : ''}
-        <div id="screen-body">${screenBody(s, { mode, answers, revealed })}</div>
+        <div id="screen-body">${screenBody(s, { mode, answers, revealed, aid })}</div>
       </section>
       <div class="controls btn-row toeic-nav">
         ${canGoBack ? `<button class="btn" id="prev">${icon('back')} Précédent</button>` : ''}
@@ -419,7 +422,7 @@ function viewRunner({ mode, part }) {
       answers[qid] = Number(b.dataset.i);
       if (mode === 'train') revealed.add(qid);
       const open = [...body.querySelectorAll('details[open]')].length > 0;
-      body.innerHTML = screenBody(s, { mode, answers, revealed }) + (noVoice ? noVoiceHtml(s.questions[0]) : '');
+      body.innerHTML = screenBody(s, { mode, answers, revealed, aid }) + (noVoice ? noVoiceHtml(s.questions[0]) : '');
       if (open) body.querySelector('details')?.setAttribute('open', '');
     });
   }
@@ -488,7 +491,7 @@ function viewRunner({ mode, part }) {
       return;
     }
     const result = scoreTest(QUESTIONS, answers);
-    const i = saveAttempt({ at: Date.now(), testId: TEST.id, answers, result });
+    const i = saveAttempt({ at: Date.now(), testId: TEST.id, answers, result, aid });
     document.body.classList.remove('in-session');
     go(`#/toeic/result/${i}`);
   }
@@ -503,10 +506,16 @@ function viewRunner({ mode, part }) {
           ? 'Monte le son. Chaque enregistrement n’est joué <b>qu’une seule fois</b>, comme à l’examen.'
           : 'Monte le son. Tu pourras réécouter et lire la transcription après avoir répondu.'}</p>
         <p class="muted small">Sur iPhone, vérifie aussi que le téléphone n’est pas en mode silencieux.</p>
+        ${list.some((x) => x.part <= 2) ? `<label class="toeic-aid glass"><input type="checkbox" id="aid">
+          <span><b>Afficher le texte des réponses</b> (parties 1 et 2)<br>
+          <small class="muted">Au vrai TOEIC, ces phrases sont seulement entendues. Plus facile pour s’entraîner${mode === 'exam' ? ' ; le score sera marqué « avec aide »' : ''}.</small></span></label>` : ''}
         <button class="btn primary full" id="begin">${icon('headphones')} Commencer</button>
         <a class="btn full" href="#/toeic">Retour</a>
       </section>`);
-    ctx.app.querySelector('#begin').addEventListener('click', show);
+    ctx.app.querySelector('#begin').addEventListener('click', () => {
+      aid = !!ctx.app.querySelector('#aid')?.checked;
+      show();
+    });
   } else {
     show();
   }
@@ -532,6 +541,7 @@ function viewResult(i) {
       <p class="eyebrow">${new Date(a.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       <h1>≈ ${total.score} <span class="muted toeic-of">/ 990</span></h1>
       <p class="lede">Score <b>estimé</b>, probablement entre <b>${total.low}</b> et <b>${total.high}</b>.</p>
+      ${a.aid ? '<p class="notice">Passé <b>avec aide</b> (texte des réponses affiché aux parties 1 et 2) : le score d’écoute est sans doute plus haut qu’au vrai TOEIC.</p>' : ''}
     </header>
     <section class="toeic-scores">${card('Écoute', L)}${card('Lecture', R)}</section>
 
