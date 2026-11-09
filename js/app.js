@@ -401,7 +401,7 @@ async function viewLanguage(code) {
       eyebrow: lang.native,
       mark: flag(code),
       title: lang.name,
-      lede: `<b class="glow">${all.seen}</b> mots vus sur ${all.total} · <b class="glow">${all.mature}</b> maîtrisés`,
+      lede: `<b class="glow">${all.seen}</b> ${all.seen > 1 ? 'mots vus' : 'mot vu'} sur ${all.total} · <b class="glow">${all.mature}</b> ${all.mature > 1 ? 'maîtrisés' : 'maîtrisé'}`,
     })}
     ${lang.note ? `<p class="notice">${icon('lightbulb')} <span>${esc(lang.note)}</span></p>` : ''}
     <a class="cta ${all.due + newToday ? '' : 'idle'}" href="#/session/${code}/all">
@@ -496,10 +496,10 @@ async function viewLanguage(code) {
     if (!cards.length) return toast('Aucune carte trouvée : il faut au moins deux colonnes.');
     (store.customDecks[code] ||= []).push({
       id: `perso-${Date.now().toString(36)}`, title: form.title.value.trim(), icon: 'pen', level: 'B1',
-      description: `${cards.length} cartes perso`, cards,
+      description: plural(cards.length, 'carte perso', 'cartes perso'), cards,
     });
     save();
-    toast(`${cards.length} cartes ajoutées`);
+    toast(plural(cards.length, 'carte ajoutée', 'cartes ajoutées'));
     viewLanguage(code);
   });
 }
@@ -523,7 +523,7 @@ async function viewPath(code) {
       eyebrow: 'Mon parcours',
       mark: flag(code),
       title: lang.name,
-      lede: `<b class="glow">${prog.done}</b> étapes validées sur ${prog.total}`,
+      lede: `<b class="glow">${prog.done}</b> ${prog.done > 1 ? 'étapes validées' : 'étape validée'} sur ${prog.total}`,
     })}
     <p class="muted small">Chaque thème est validé quand toutes ses cartes ont été apprises ; chaque dialogue, avec au moins 2 bonnes réponses sur 3.
     Les étapes restent ouvertes : tu peux avancer dans l’ordre ou piocher.</p>
@@ -1500,9 +1500,9 @@ async function viewStats() {
     ${banner(interleave(LANGUAGES.map((l) => l.code), [{ icon: 'chart', hue: '#82b8db' }, { icon: 'flame', hue: '#f09a6a' }, { icon: 'target', hue: '#f4c76b' }]))}
     ${pageHead({ eyebrow: 'Carnet de bord', mark: icon('chart'), title: 'Statistiques', lede: 'Ce que tu as déjà parcouru.' })}
     <section class="tiles">
-      <div class="tile glass" style="--rim:var(--gold)"><span class="tile-value glow-gold">${streak()}</span><span class="tile-label">jours d’affilée</span></div>
-      <div class="tile glass"><span class="tile-value">${seen}</span><span class="tile-label">mots vus</span></div>
-      <div class="tile glass"><span class="tile-value">${mature}</span><span class="tile-label">maîtrisés</span></div>
+      <div class="tile glass" style="--rim:var(--gold)"><span class="tile-value glow-gold">${streak()}</span><span class="tile-label">${streak() > 1 ? 'jours' : 'jour'} d’affilée</span></div>
+      <div class="tile glass"><span class="tile-value">${seen}</span><span class="tile-label">${seen > 1 ? 'mots vus' : 'mot vu'}</span></div>
+      <div class="tile glass"><span class="tile-value">${mature}</span><span class="tile-label">${mature > 1 ? 'maîtrisés' : 'maîtrisé'}</span></div>
       <div class="tile glass"><span class="tile-value">${acc === null ? '—' : `${Math.round(acc * 100)}<small>%</small>`}</span><span class="tile-label">réussite (30 j)</span></div>
     </section>
 
