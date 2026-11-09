@@ -341,9 +341,14 @@ async function viewHome() {
           </span>
         </a>`).join('')}
     </section>
+    <a class="method-link glass toeic-link" href="#/toeic" style="--rim:#7fb6d9">
+      <span class="orb" style="--hue:#7fb6d9">${icon('trophy')}</span>
+      <span class="hero-body"><strong>TOEIC blanc</strong><span class="muted small">Teste ton anglais au format TOEIC : score estimé et niveau</span></span>
+      ${icon('arrow')}
+    </a>
     <a class="method-link glass kids-link" href="#/kids" style="--rim:#7fd1c7">
       <span class="orb" style="--hue:#7fd1c7">${icon('users')}</span>
-      <span class="hero-body"><strong>Mode Enfant</strong><span class="muted small">Premiers mots d’anglais pour les 2–5 ans, avec un parent</span></span>
+      <span class="hero-body"><strong>Mode Enfant</strong><span class="muted small">Premiers mots pour les 2–5 ans, en 5 langues, avec un parent</span></span>
       ${icon('arrow')}
     </a>
     <a class="method-link glass" href="#/method" style="--rim:#c79bf2">
@@ -1688,6 +1693,34 @@ async function route() {
 window.addEventListener('hashchange', route);
 route();
 
+// Mises à jour : on vérifie à chaque retour dans l'app (une app installée sur l'écran d'accueil
+// ne se recharge presque jamais). Une nouvelle version s'applique tout de suite sur un écran calme,
+// sinon au prochain passage sur un tel écran : jamais au milieu d'une séance, d'un test ou du Mode Enfant.
+const CALM_VIEWS = ['', 'lang', 'path', 'browse', 'stats', 'method', 'settings'];
+let updateReady = false;
+
+function calmView() {
+  const [, view = '', sub] = (location.hash || '#/').split('?')[0].split('/');
+  if (view === 'toeic') return !sub; // l'accueil du TOEIC, pas un test en cours
+  return CALM_VIEWS.includes(view);
+}
+
+function applyUpdateIfCalm() {
+  if (updateReady && calmView()) location.reload();
+}
+
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  let controlled = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
+  // Premier chargement : le service worker prend la main sans qu'il y ait de nouvelle version.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!controlled) { controlled = true; return; }
+    updateReady = true;
+    applyUpdateIfCalm();
+  });
+  window.addEventListener('hashchange', applyUpdateIfCalm);
 }
