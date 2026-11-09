@@ -80,12 +80,16 @@ function voiceFor(who, shift = 0) {
   return { voice, pitch };
 }
 
-// Lit des répliques à la suite. Renvoie une fonction d'arrêt ; onend est toujours appelé.
-function playScript(lines, shift, onLine, onend) {
+// Lit des répliques à la suite. Renvoie une fonction d'arrêt.
+//   onend : appelé à la fin ; onBlocked : appelé si la voix ne démarre pas (Safari iOS exige
+//   qu'elle démarre juste après un appui : sinon elle reste muette, sans erreur).
+// Le minuteur de secours ne court qu'une fois la voix lancée, pour ne jamais la couper.
+function playScript(lines, shift, onLine, onend, onBlocked) {
   let i = 0;
   let stopped = false;
   let guard = null;
   let pause = null;
+  const synth = 'speechSynthesis' in window ? window.speechSynthesis : null;
   const next = () => {
     if (stopped) return;
     if (i >= lines.length) { onLine?.(-1); onend?.(); return; }
@@ -93,26 +97,40 @@ function playScript(lines, shift, onLine, onend) {
     onLine?.(i);
     let done = false;
     const finish = () => {
-      if (done) return;
+      if (done || stopped) return;
       done = true;
       clearTimeout(guard);
       i++;
       pause = setTimeout(next, 500);
     };
-    guard = setTimeout(finish, 2500 + line.text.length * 90);
+    // Sans synthèse vocale, on avance au rythme de la lecture (le texte est affiché).
+    if (!synth) { guard = setTimeout(finish, 1500 + line.text.length * 60); return; }
     try {
-      if (!('speechSynthesis' in window)) throw new Error('pas de synthèse vocale');
       const u = new SpeechSynthesisUtterance(line.text);
       const { voice, pitch } = voiceFor(line.who, shift);
       u.lang = voice?.lang || 'en-US';
       if (voice) u.voice = voice;
       u.pitch = pitch;
       u.rate = 0.95;
-      u.onend = u.onerror = finish;
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
+      u.onstart = () => {
+        clearTimeout(guard);
+        guard = setTimeout(finish, 6000 + line.text.length * 130);
+      };
+      u.onend = finish;
+      u.onerror = (e) => {
+        // « not-allowed » : le navigateur a refusé de parler sans appui de l'utilisateur.
+        if (e?.error === 'not-allowed' && i === 0) { clearTimeout(guard); onBlocked?.(); return; }
+        finish();
+      };
+      // Annuler juste avant de parler fait parfois taire Safari : seulement si quelque chose est en cours.
+      if (synth.speaking || synth.pending) synth.cancel();
+      synth.speak(u);
+      // Rien n'a démarré au bout de 3 s : sur la première réplique, c'est un blocage ; ensuite, on avance.
+      guard = setTimeout(() => {
+        if (i === 0) { stopped = true; try { synth.cancel(); } catch { /* rien */ } onBlocked?.(); } else finish();
+      }, 3000);
     } catch {
-      // Sans synthèse vocale, le minuteur de secours fait avancer.
+      guard = setTimeout(finish, 1500 + line.text.length * 60);
     }
   };
   next();
@@ -120,7 +138,7 @@ function playScript(lines, shift, onLine, onend) {
     stopped = true;
     clearTimeout(guard);
     clearTimeout(pause);
-    try { speechSynthesis.cancel(); } catch { /* rien */ }
+    try { synth?.cancel(); } catch { /* rien */ }
   };
 }
 
@@ -223,7 +241,7 @@ function graphicHtml(g) {
 
 // Boutons de réponse. showText : afficher le texte des options (toujours sauf parties 1 et 2 en examen).
 function optionsHtml(q, { showText, chosen, reveal }) {
-  return `<div class="choices toeic-choices" data-q="${q.id}">${q.options.map((o, i) => {
+  return `<div class="choices toeic-choices${showText ? '' : ' letters'}" data-q="${q.id}" style="--n:${q.options.length}">${q.options.map((o, i) => {
     let cls = '';
     if (reveal) cls = i === q.answer ? 'right' : i === chosen ? 'wrong' : '';
     else if (i === chosen) cls = 'picked';
@@ -356,9 +374,19 @@ function viewRunner({ mode, part }) {
     const first = s.questions[0];
     const lines = scriptFor(first);
     noVoice = !('speechSynthesis' in window) || (voicesLoaded() && !hasEnglishVoice());
+    if (state) state.innerHTML = `${icon('headphones')} Écoute…`;
+    ctx.app.querySelector('#start-audio')?.remove();
     stopAudio = playScript(lines, index, null, () => {
       audioDone = true;
       if (state) state.innerHTML = `${icon('check')} Fin de l’enregistrement${mode === 'exam' ? ' (une seule écoute, comme à l’examen)' : ''}`;
+    }, () => {
+      // La voix n'a pas démarré : un appui suffit (même en test blanc, rien n'a encore été entendu).
+      if (state) state.innerHTML = `${icon('speaker')} Le son n’a pas démarré`;
+      const box = ctx.app.querySelector('.toeic-audio');
+      if (box && !box.querySelector('#start-audio')) {
+        box.insertAdjacentHTML('beforeend', `<button class="btn primary" id="start-audio">${icon('speaker')} Lancer l’écoute</button>`);
+        box.querySelector('#start-audio').addEventListener('click', () => startAudio(s));
+      }
     });
     // Pas de voix anglaise : on affiche le texte, sinon l'exercice serait impossible.
     if (noVoice) ctx.app.querySelector('#screen-body').insertAdjacentHTML('beforeend', noVoiceHtml(first));
@@ -457,7 +485,23 @@ function viewRunner({ mode, part }) {
     go(`#/toeic/result/${i}`);
   }
 
-  show();
+  // Première écoute : on la lance depuis un appui (Safari iOS refuse de parler sans geste).
+  if (list[0].section === 'L') {
+    render(`
+      <section class="empty toeic-break">
+        <span class="orb big" style="--hue:${HUE}">${icon('headphones')}</span>
+        <h1>${mode === 'exam' ? 'Prêt ?' : `Partie ${part}`}</h1>
+        <p class="lede">${mode === 'exam'
+          ? 'Monte le son. Chaque enregistrement n’est joué <b>qu’une seule fois</b>, comme à l’examen.'
+          : 'Monte le son. Tu pourras réécouter et lire la transcription après avoir répondu.'}</p>
+        <p class="muted small">Sur iPhone, vérifie aussi que le téléphone n’est pas en mode silencieux.</p>
+        <button class="btn primary full" id="begin">${icon('headphones')} Commencer</button>
+        <a class="btn full" href="#/toeic">Retour</a>
+      </section>`);
+    ctx.app.querySelector('#begin').addEventListener('click', show);
+  } else {
+    show();
+  }
   return cleanupAll;
 }
 

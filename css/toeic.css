@@ -37,9 +37,9 @@
 }
 .choice.picked { border-color: var(--gold); background: rgb(244 199 107 / 10%); box-shadow: 0 0 18px rgb(244 199 107 / 18%); }
 .choice.picked .toeic-letter { background: var(--gold); color: var(--on-gold); }
-/* Parties 1 et 2 à l'examen : seulement les lettres, comme sur la feuille de réponses. */
-.toeic-choices .choice:not(:has(span)) { width: auto; justify-content: center; }
-.toeic-choices:not(:has(span)) { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); }
+/* Parties 1 et 2 à l'examen : seulement les lettres, comme sur la feuille de réponses, sur une ligne. */
+.toeic-choices.letters { grid-template-columns: repeat(var(--n, 4), 1fr); }
+.toeic-choices.letters .choice { justify-content: center; padding: 14px 6px; }
 
 .toeic-photo { margin: 0 0 6px; border-radius: 18px; overflow: hidden; background: linear-gradient(180deg, #e9f1f4, #cfdde3); text-align: center; }
 .toeic-scene { display: block; padding: 22px 10px 10px; font-size: clamp(2.6rem, 14vw, 4.2rem); letter-spacing: 0.1em; line-height: 1.2; }
@@ -63,7 +63,8 @@
 .toeic-transcript summary { cursor: pointer; color: var(--gold); }
 .toeic-transcript p { margin: 6px 0 0; }
 .toeic-nav { margin-top: 14px; justify-content: flex-end; }
-.toeic-break { padding-top: 40px; }
+.toeic-break { padding-top: 40px; display: grid; gap: 12px; justify-items: center; }
+.toeic-break .btn.full { max-width: 420px; }
 
 /* Résultats */
 .toeic-of { font-size: 0.5em; }

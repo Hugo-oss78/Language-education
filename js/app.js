@@ -200,6 +200,23 @@ if ('speechSynthesis' in window) {
   speechSynthesis.addEventListener?.('voiceschanged', refreshVoices);
 }
 
+// Safari iOS ne laisse parler la synthèse vocale qu'après un premier appui de l'utilisateur :
+// au premier contact, on prononce une phrase vide et muette, ce qui autorise ensuite la voix partout
+// (prononciation automatique des cartes, Mode Enfant, TOEIC).
+function unlockSpeech() {
+  document.removeEventListener('touchend', unlockSpeech, true);
+  document.removeEventListener('click', unlockSpeech, true);
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  } catch { /* pas de synthèse vocale */ }
+}
+if ('speechSynthesis' in window) {
+  document.addEventListener('touchend', unlockSpeech, true);
+  document.addEventListener('click', unlockSpeech, true);
+}
+
 function voiceFor(code) {
   const tts = getLanguage(code)?.tts || code;
   const base = tts.split('-')[0];
