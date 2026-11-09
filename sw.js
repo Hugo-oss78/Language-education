@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v14';
+const VERSION = 'lingua-v15';
 const FILES = [
   './',
   'index.html',

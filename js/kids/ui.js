@@ -250,9 +250,9 @@ function viewParent(profile) {
     <h2 class="section-title">Cette semaine</h2>
     <section class="kid-stats">
       <div class="glass"><strong>${week.sessions}</strong><span class="muted small">${week.sessions > 1 ? 'séances' : 'séance'}</span></div>
-      <div class="glass"><strong>${week.sessions && !week.minutes ? '&lt;1' : week.minutes}</strong><span class="muted small">minutes</span></div>
-      <div class="glass"><strong>${week.newWords.length}</strong><span class="muted small">nouveaux mots</span></div>
-      <div class="glass"><strong>${week.missions.length}</strong><span class="muted small">missions</span></div>
+      <div class="glass"><strong>${week.sessions && !week.minutes ? '&lt;1' : week.minutes}</strong><span class="muted small">${week.minutes > 1 ? 'minutes' : 'minute'}</span></div>
+      <div class="glass"><strong>${week.newWords.length}</strong><span class="muted small">${week.newWords.length > 1 ? 'nouveaux mots' : 'nouveau mot'}</span></div>
+      <div class="glass"><strong>${week.missions.length}</strong><span class="muted small">${week.missions.length > 1 ? 'missions' : 'mission'}</span></div>
     </section>
     ${week.newWords.length ? `<p class="muted small">Mots découverts : ${week.newWords.map((id) => `${C.byId[id].emoji[0]} ${esc(C.byId[id].word)}`).join(', ')}.</p>` : ''}
 
