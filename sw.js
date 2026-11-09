@@ -1,11 +1,12 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v13';
+const VERSION = 'lingua-v14';
 const FILES = [
   './',
   'index.html',
   'css/style.css',
   'css/kids.css',
+  'css/toeic.css',
   'js/app.js',
   'js/srs.js',
   'js/text.js',
@@ -19,6 +20,8 @@ const FILES = [
   'js/kids/store.js',
   'js/kids/ui.js',
   'js/kids/content.js',
+  'js/toeic/engine.js',
+  'js/toeic/ui.js',
   'data/languages.js',
   'data/en.js',
   'data/es.js',
@@ -26,6 +29,7 @@ const FILES = [
   'data/ne.js',
   'data/ar.js',
   'data/kids/words.js',
+  'data/toeic/test1.js',
   'data/kids/en.js',
   'data/kids/es.js',
   'data/kids/id.js',
