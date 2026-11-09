@@ -1,6 +1,6 @@
 // Service worker : permet d'utiliser l'application hors ligne.
 // Pense à changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'lingua-v15';
+const VERSION = 'lingua-v17';
 const FILES = [
   './',
   'index.html',
@@ -61,7 +61,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    // « no-cache » : on demande toujours au serveur si le fichier a changé (sinon le navigateur
+    // peut resservir une ancienne version pendant quelques minutes après une mise à jour).
+    // Une ouverture de page (navigate) ne peut pas être recopiée telle quelle : on repart de son adresse.
+    fetch(event.request.mode === 'navigate'
+      ? new Request(event.request.url, { cache: 'no-cache' })
+      : new Request(event.request, { cache: 'no-cache' }))
       .then((response) => {
         const copy = response.clone();
         if (response.ok) caches.open(VERSION).then((cache) => cache.put(event.request, copy));
