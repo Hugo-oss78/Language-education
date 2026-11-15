@@ -1175,15 +1175,30 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode, learn = f
     $('.exercise').append(zone);
     $('.exercise').classList.add(ok ? 'is-ok' : 'is-ko');
     bindSpeak(zone, code);
+    // Écoute : le texte entendu s'affiche à la place de la consigne, bien visible.
+    const heard = $('#heard');
+    if (heard) {
+      heard.className = 'heard';
+      heard.innerHTML = `<span class="kicker">Tu as entendu</span><strong ${langAttrs(lang)}>${esc(alternatives(card.term)[0])}</strong>${card.translit ? `<span class="translit">${esc(card.translit)}</span>` : ''}`;
+    }
     if (store.settings.autoSpeak && canSpeak(code) && !card.script) speak(card.term, code);
-    let grade = ok ? (close ? GRADES.HARD : GRADES.GOOD) : GRADES.AGAIN;
+    const initial = ok ? (close ? GRADES.HARD : GRADES.GOOD) : GRADES.AGAIN;
+    let grade = initial;
     controls(`
       ${!ok && given ? '<button type="button" class="link small center-link" id="override">J’avais raison (synonyme)</button>' : ''}
       <button type="button" class="btn primary full" id="continue">Continuer <kbd>Entrée</kbd></button>`);
+    // « J'avais raison » reste à sa place et devient « Annuler » : un appui en trop ne fait pas passer
+    // à la question suivante, et un double appui rapide n'annule pas aussitôt.
+    let lastToggle = 0;
     $('#override')?.addEventListener('click', (e) => {
-      grade = GRADES.GOOD;
-      zone.querySelector('.verdict').outerHTML = `<p class="verdict ok">${icon('check')} Compté comme juste</p>`;
-      e.currentTarget.remove();
+      if (Date.now() - lastToggle < 600) return;
+      lastToggle = Date.now();
+      const counted = grade !== initial;
+      grade = counted ? initial : GRADES.GOOD;
+      zone.querySelector('.verdict').outerHTML = counted
+        ? `<p class="verdict ko">${icon('x')} Ta réponse : « ${esc(given)} »</p>`
+        : `<p class="verdict ok">${icon('check')} Compté comme juste</p>`;
+      e.currentTarget.textContent = counted ? 'J’avais raison (synonyme)' : 'Annuler : compter comme faux';
     });
     const proceed = () => { keys = {}; settle(card, grade); next(); };
     $('#continue').addEventListener('click', proceed);
@@ -1293,7 +1308,7 @@ async function viewSession(code, deckId = 'all', { quiz = false, mode, learn = f
       frame(card, KIND_LABELS[KINDS.LISTEN], 'headphones', `
         <div class="prompt listen">
           <button type="button" class="play" data-say="${esc(card.term)}" aria-label="Réécouter">${icon('speaker')}</button>
-          <p class="muted small">Qu’as-tu entendu ? Touche le haut-parleur pour réécouter.</p>
+          <p class="muted small" id="heard">Qu’as-tu entendu ? Touche le haut-parleur pour réécouter.</p>
         </div>${choiceButtons(options, false)}`);
       setTimeout(() => speak(card.term, code), 250);
       bindChoices(card, options, card.fr);
