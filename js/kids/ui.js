@@ -11,6 +11,7 @@ import {
   langProgress, langMissions, setLangData,
 } from './store.js';
 import { icon, flag } from '../icons.js';
+import { pickVoice } from '../voices.js';
 
 const AVATARS = ['🦊', '🐻', '🐰', '🐼', '🦁', '🐸', '🐯', '🐨'];
 const STICKERS = ['🌼', '🌻', '🌷', '🍄', '🐞', '🦋', '🐝', '🌈', '⭐', '🐌', '🌳', '🐿️', '🐢', '🌙', '🍓', '🐬'];
@@ -44,11 +45,9 @@ function allVoices() {
   try { return window.speechSynthesis?.getVoices() || []; } catch { return []; }
 }
 
+// Même voix que dans les réglages de l'application (ou la meilleure de l'appareil).
 function voiceFor(tts) {
-  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
-  const base = tts.split('-')[0];
-  const list = allVoices();
-  return list.find((v) => norm(v) === tts.toLowerCase()) || list.find((v) => norm(v).startsWith(base));
+  return pickVoice(allVoices(), tts, C?.code);
 }
 
 const ttsCode = () => getLanguage(C?.code || 'en')?.tts || 'en-GB';

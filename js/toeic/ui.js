@@ -6,6 +6,7 @@ import {
   PARTS, LETTERS, flatten, screens, scoreTest, weakestPart, scriptFor,
 } from './engine.js';
 import { icon, flag } from '../icons.js';
+import { rankVoices, isNovelty, savedVoiceId } from '../voices.js';
 
 const KEY = 'lingua.toeic.v1';
 const HUE = '#7fb6d9';
@@ -43,13 +44,16 @@ function saveAttempt(attempt) {
 
 // ---------- Voix : plusieurs accents anglais (le vrai test mélange américain, britannique, canadien, australien) ----------
 
+// Voix anglaises de la meilleure à la moins bonne (voix gadget écartées s'il en reste d'autres) ;
+// la voix choisie dans les réglages passe en premier.
 function englishVoices() {
   let list = [];
   try { list = window.speechSynthesis?.getVoices() || []; } catch { list = []; }
-  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
-  const order = ['en-us', 'en-gb', 'en-au', 'en-ca', 'en-ie', 'en-nz'];
-  return list.filter((v) => norm(v).startsWith('en'))
-    .sort((a, b) => (order.indexOf(norm(a)) + 1 || 99) - (order.indexOf(norm(b)) + 1 || 99));
+  const ranked = rankVoices(list, 'en-US');
+  const good = ranked.filter((v) => !isNovelty(v));
+  const pool = good.length ? good : ranked;
+  const chosen = savedVoiceId('en');
+  return chosen ? [...pool.filter((v) => v.voiceURI === chosen), ...pool.filter((v) => v.voiceURI !== chosen)] : pool;
 }
 
 function voicesLoaded() {

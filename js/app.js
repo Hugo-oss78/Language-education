@@ -15,6 +15,7 @@ import {
   exportJson, importJson, resetAll,
 } from './storage.js';
 import { isLocked as kidsLocked } from './kids/store.js';
+import { pickVoice, rankVoices, voiceLabel, savedVoiceId, saveVoiceId } from './voices.js';
 import {
   placementLevels, levelQuestions, nextAfter, unitsFrom, orderFresh, PER_LEVEL,
 } from './placement.js';
@@ -200,8 +201,12 @@ function progressBar(value, label) {
 // ---------- Voix ----------
 
 let voices = [];
+let settingsShown = false; // les réglages ont déjà été affichés (on peut les redessiner sans risque)
 function refreshVoices() {
+  const before = voices.length;
   try { voices = window.speechSynthesis?.getVoices() || []; } catch { voices = []; }
+  // Les voix arrivent parfois après l'affichage des réglages : on les redessine.
+  if (settingsShown && voices.length !== before && location.hash.startsWith('#/settings')) viewSettings();
 }
 if ('speechSynthesis' in window) {
   refreshVoices();
@@ -225,11 +230,9 @@ if ('speechSynthesis' in window) {
   document.addEventListener('click', unlockSpeech, true);
 }
 
+// La meilleure voix de l'appareil pour cette langue (ou celle choisie dans les réglages) : voir voices.js.
 function voiceFor(code) {
-  const tts = getLanguage(code)?.tts || code;
-  const base = tts.split('-')[0];
-  const norm = (v) => v.lang.replace('_', '-').toLowerCase();
-  return voices.find((v) => norm(v) === tts.toLowerCase()) || voices.find((v) => norm(v).startsWith(base));
+  return pickVoice(voices, getLanguage(code)?.tts || code, code);
 }
 
 function canSpeak(code) {
@@ -1779,10 +1782,27 @@ function viewSettings() {
     </form>
 
     <h2 class="section-title">Voix sur cet appareil</h2>
-    <ul class="voices glass">
-      ${LANGUAGES.map((l) => `<li><span class="lang-flag sm">${flag(l.code)}</span><span>${l.name}</span>
-        ${canSpeak(l.code) ? `<span class="chip maitrise">${icon('check')} ${esc(voiceFor(l.code).name)}</span>` : '<span class="chip">Aucune : pas d’exercices d’écoute</span>'}</li>`).join('')}
+    <p class="muted small">Lingua choisit la voix la plus naturelle de ton appareil. Tu peux en essayer d’autres : la qualité varie beaucoup d’une voix à l’autre, surtout sur les phrases.</p>
+    <ul class="voices glass" id="voices">
+      ${LANGUAGES.map((l) => {
+        const ranked = rankVoices(voices, l.tts);
+        if (!ranked.length) return `<li><span class="lang-flag sm">${flag(l.code)}</span><span>${l.name}</span><span class="chip">Aucune : pas d’exercices d’écoute</span></li>`;
+        const chosen = savedVoiceId(l.code);
+        return `<li class="voice-row">
+          <span class="lang-flag sm">${flag(l.code)}</span>
+          <label class="voice-pick"><span>${l.name}</span>
+            <select data-voice="${l.code}" aria-label="Voix pour ${l.name.toLowerCase()}">
+              <option value="">Automatique · ${esc(voiceLabel(ranked[0]))}</option>
+              ${ranked.map((v) => `<option value="${esc(v.voiceURI)}" ${chosen === v.voiceURI ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('')}
+            </select>
+          </label>
+          <button type="button" class="icon-btn" data-try="${l.code}" aria-label="Écouter la voix ${l.name.toLowerCase()}">${icon('speaker')}</button>
+        </li>`;
+      }).join('')}
     </ul>
+    <p class="muted small voice-help">${icon('lightbulb')} <b>Pour une voix plus naturelle sur iPhone</b> : Réglages → Accessibilité → Contenu énoncé → Voix,
+      choisis la langue puis télécharge une voix marquée « Améliorée » ou « Premium » (le chemin peut varier selon la version d’iOS).
+      Elle apparaîtra ensuite dans la liste ci-dessus. Sur Android, les voix se gèrent dans les réglages de « Synthèse vocale ».</p>
 
     <h2 class="section-title">Sauvegarde</h2>
     <p class="muted small">Ta progression est enregistrée uniquement sur cet appareil. Exporte-la pour la garder ou la transférer.</p>
@@ -1802,6 +1822,22 @@ function viewSettings() {
     s.recognition = f.recognition.checked;
     toast(save() ? 'Réglages enregistrés' : 'Impossible d’enregistrer sur cet appareil');
   });
+
+  settingsShown = true;
+
+  // Voix : choix enregistré par langue, et essai sur une phrase (c'est sur les phrases que la différence s'entend).
+  const SAMPLES = {
+    en: 'Hello! I was wondering if you could help me find the station.',
+    es: '¡Hola! ¿Me podría decir dónde está la estación, por favor?',
+    id: 'Halo! Permisi, stasiunnya di mana, ya?',
+    ne: 'नमस्ते! बस बिसौनी कहाँ छ?',
+    ar: 'مرحبا! من فضلك، أين محطة القطار؟',
+  };
+  app.querySelectorAll('[data-voice]').forEach((sel) => sel.addEventListener('change', () => {
+    saveVoiceId(sel.dataset.voice, sel.value || null);
+    speak(SAMPLES[sel.dataset.voice] || '', sel.dataset.voice);
+  }));
+  app.querySelectorAll('[data-try]').forEach((b) => b.addEventListener('click', () => speak(SAMPLES[b.dataset.try] || '', b.dataset.try)));
 
   app.querySelector('#export').addEventListener('click', () => {
     const blob = new Blob([exportJson()], { type: 'application/json' });
